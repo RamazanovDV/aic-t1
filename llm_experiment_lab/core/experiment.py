@@ -19,6 +19,18 @@ class Experiment:
     def __init__(self, client: LLMAPIClient):
         self.client = client
 
+    async def run_single(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: ModelConfig,
+        index: int = 0,
+        progress_callback: Optional[Callable] = None,
+    ) -> ModelStats:
+        return await self._run_model(
+            system_prompt, user_prompt, model, index, progress_callback
+        )
+
     async def run_parallel(
         self,
         system_prompt: str,

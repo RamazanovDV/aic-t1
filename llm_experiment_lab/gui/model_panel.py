@@ -36,6 +36,7 @@ class StatusIndicator(QLabel):
 class ModelPanel(QWidget):
     config_changed = pyqtSignal()
     dropdown_opened = pyqtSignal()
+    run_clicked = pyqtSignal()
 
     DEFAULT_MODELS = [
         "gpt-4",
@@ -79,6 +80,13 @@ class ModelPanel(QWidget):
 
         self.status_indicator = StatusIndicator()
         top_row.addWidget(self.status_indicator)
+
+        self.run_btn = QPushButton("Run")
+        self.run_btn.setFixedWidth(60)
+        self.run_btn.setToolTip("Запустить эту модель")
+        self.run_btn.clicked.connect(self.run_clicked.emit)
+        top_row.addWidget(self.run_btn)
+
         top_row.addStretch()
         group_layout.addLayout(top_row)
 
@@ -246,3 +254,6 @@ class ModelPanel(QWidget):
             "request": {},
             "response": {},
         }
+
+    def set_run_enabled(self, enabled: bool):
+        self.run_btn.setEnabled(enabled)

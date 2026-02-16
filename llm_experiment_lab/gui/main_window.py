@@ -2,10 +2,11 @@ import json
 import os
 import threading
 import queue
+from functools import partial
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QProgressBar, QMessageBox, QSplitter,
+    QPushButton, QMessageBox, QSplitter,
     QStatusBar, QTextEdit,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
@@ -142,25 +143,12 @@ class MainWindow(QMainWindow):
             ModelPanel("Model 2"),
             ModelPanel("Model 3"),
         ]
-        for panel in self.model_panels:
+        for i, panel in enumerate(self.model_panels):
             panel.dropdown_opened.connect(self._on_dropdown_opened)
+            panel.run_clicked.connect(lambda idx=i: self._run_single(idx))
             models_layout.addWidget(panel)
         models_widget.setLayout(models_layout)
         splitter.addWidget(models_widget)
-
-        self.prompts_area = PromptsArea()
-        splitter.addWidget(self.prompts_area)
-
-        self.eval_area = EvalArea()
-        self.eval_area.evaluate_clicked.connect(self._run_evaluation)
-        self.eval_area.set_evaluate_enabled(False)
-        splitter.addWidget(self.eval_area)
-
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 1)
-
-        layout.addWidget(splitter)
 
         control_layout = QHBoxLayout()
         self.run_btn = QPushButton("Run All")
@@ -172,19 +160,30 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         control_layout.addWidget(self.stop_btn)
 
-        control_layout.addSpacing(20)
-
-        self.refresh_models_btn = QPushButton("Refresh Models")
-        self.refresh_models_btn.clicked.connect(self._refresh_models)
-        control_layout.addWidget(self.refresh_models_btn)
-
         control_layout.addStretch()
 
         self.settings_btn = QPushButton("Settings")
         self.settings_btn.clicked.connect(self._show_settings)
         control_layout.addWidget(self.settings_btn)
 
-        layout.addLayout(control_layout)
+        control_widget = QWidget()
+        control_widget.setLayout(control_layout)
+        splitter.addWidget(control_widget)
+
+        self.prompts_area = PromptsArea()
+        splitter.addWidget(self.prompts_area)
+
+        self.eval_area = EvalArea()
+        self.eval_area.evaluate_clicked.connect(self._run_evaluation)
+        self.eval_area.set_evaluate_enabled(False)
+        splitter.addWidget(self.eval_area)
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(3, 1)
+
+        layout.addWidget(splitter)
 
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
@@ -310,6 +309,111 @@ class MainWindow(QMainWindow):
             return
         self._refresh_models()
 
+    def _run_single(self, index: int):
+        if index >= len(self.model_panels):
+            return
+
+        system_prompt = self.prompts_area.get_system_prompt()
+        user_prompt = self.prompts_area.get_user_prompt()
+
+        if not system_prompt and not user_prompt:
+            QMessageBox.warning(self, "Warning", "Please enter at least one prompt")
+            return
+
+        api_cfg = self.settings.get("api", {})
+        if not api_cfg.get("api_key"):
+            QMessageBox.warning(self, "Warning", "Please set API key in Settings")
+            return
+
+        self._create_client()
+
+        panel = self.model_panels[index]
+        config = panel.get_model_config()
+
+        if index in self.model_responses:
+            del self.model_responses[index]
+        if index in self.model_stats:
+            del self.model_stats[index]
+        if index in self.model_json:
+            del self.model_json[index]
+
+        panel.clear_response()
+        self._log(f"Starting single model run: {config.name}...")
+
+        self._set_all_run_buttons_enabled(False)
+        self.eval_area.set_evaluate_enabled(False)
+        self.stop_btn.setEnabled(True)
+
+        def run_single_model():
+            import asyncio
+            import json
+            import traceback
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                req_json = {
+                    "model": config.name,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": config.temperature,
+                    "top_p": config.top_p,
+                    "top_k": config.top_k if config.top_k > 0 else None,
+                }
+                self._log(f"--- Model REQUEST ---")
+                self._log(json.dumps(req_json, indent=2, ensure_ascii=False)[:500])
+                self._log("--- END REQUEST ---")
+
+                stat = loop.run_until_complete(
+                    self.experiment.run_single(
+                        system_prompt,
+                        user_prompt,
+                        config,
+                        index,
+                        lambda idx, status, model_nm: self._progress_callback(idx, status, config.name)
+                    )
+                )
+
+                if stat.error:
+                    self._update_panel_error(panel, stat, stat.error)
+                else:
+                    content = stat.content
+                    req_json = stat.raw_request
+                    res_json = stat.raw_response
+                    self._update_panel_success(panel, content, stat, req_json, res_json)
+
+                    self.model_responses[index] = {
+                        "model": config.name,
+                        "content": content,
+                    }
+                    self.model_json[index] = {
+                        "request": req_json,
+                        "response": res_json,
+                    }
+
+                self.model_stats[index] = stat
+
+                self._on_single_complete()
+            except Exception as e:
+                self._log(f"ERROR: {str(e)}")
+                self._log(traceback.format_exc())
+                self._on_single_complete()
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_single_model)
+        thread.start()
+
+    def _on_single_complete(self):
+        self._set_all_run_buttons_enabled(True)
+        self.ui_queue.put({"type": "enable_stop", "enabled": False})
+
+        has_any_results = bool(self.model_responses)
+        self.ui_queue.put({"type": "enable_eval", "enabled": has_any_results})
+        self.ui_queue.put({"type": "set_statusbar", "message": "Single model completed"})
+        self._log("Single model run completed")
+
     def _run_all(self):
         system_prompt = self.prompts_area.get_system_prompt()
         user_prompt = self.prompts_area.get_user_prompt()
@@ -336,10 +440,8 @@ class MainWindow(QMainWindow):
         self.log_widget.clear()
         self._log("Starting experiment...")
 
-        self.run_btn.setEnabled(False)
+        self._set_all_run_buttons_enabled(False)
         self.stop_btn.setEnabled(True)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
         self.eval_area.set_evaluate_enabled(False)
 
         exec_mode = self.settings.get("execution", {}).get("mode", "parallel")
@@ -489,12 +591,21 @@ class MainWindow(QMainWindow):
         self._log(f"[{panel.title}] Response: {len(content)} chars, {stat.total_tokens} tokens in {stat.response_time:.2f}s")
 
     def _on_experiment_complete(self):
-        self.ui_queue.put({"type": "set_progress", "value": 100})
-        self.ui_queue.put({"type": "enable_run", "enabled": True})
+        self._set_all_run_buttons_enabled(True)
         self.ui_queue.put({"type": "enable_stop", "enabled": False})
-        self.ui_queue.put({"type": "enable_eval", "enabled": True})
+
+        has_successful = any(
+            self.model_stats.get(i) and not self.model_stats[i].error
+            for i in self.model_stats
+        )
+        self.ui_queue.put({"type": "enable_eval", "enabled": has_successful})
         self.ui_queue.put({"type": "set_statusbar", "message": "Completed"})
         self._log("Experiment completed")
+
+    def _set_all_run_buttons_enabled(self, enabled: bool):
+        self.run_btn.setEnabled(enabled)
+        for panel in self.model_panels:
+            panel.set_run_enabled(enabled)
 
     def _progress_callback(self, index: int, status: str, model_name: str):
         if index < len(self.model_panels):
@@ -547,6 +658,9 @@ class MainWindow(QMainWindow):
         responses = []
         for i, (idx, resp) in enumerate(self.model_responses.items()):
             stat = self.model_stats.get(idx)
+            if stat and stat.error:
+                self._log(f"Skipping model {resp['model']} due to error: {stat.error}")
+                continue
             resp_with_stats = {
                 "model": resp["model"],
                 "content": resp["content"],
@@ -559,7 +673,14 @@ class MainWindow(QMainWindow):
             }
             responses.append(resp_with_stats)
 
+        if len(responses) < 1:
+            QMessageBox.warning(self, "Warning", "No successful model responses to evaluate")
+            return
+
+        self._log(f"Evaluating {len(responses)} model responses...")
+
         self.eval_area.set_evaluate_enabled(False)
+        self._set_all_run_buttons_enabled(False)
         self.status_bar.showMessage("Running evaluation...")
         self._log("Starting evaluation...")
 
@@ -597,6 +718,7 @@ class MainWindow(QMainWindow):
                 self._log(traceback.format_exc())
             finally:
                 self.ui_queue.put({"type": "enable_eval", "enabled": True})
+                self._set_all_run_buttons_enabled(True)
 
         thread = threading.Thread(target=run_eval)
         thread.start()
