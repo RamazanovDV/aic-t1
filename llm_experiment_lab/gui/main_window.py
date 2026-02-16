@@ -309,6 +309,33 @@ class MainWindow(QMainWindow):
                     self.status_bar.showMessage(op.get("message"))
                 elif op_type == "eval_result":
                     self.eval_area.set_eval_result(op.get("result", ""))
+                elif op_type == "model_complete":
+                    idx = op.get("index")
+                    stat = op.get("stat")
+                    panel = op.get("panel")
+                    config = op.get("config")
+                    
+                    panel.set_running(False)
+                    
+                    if stat.error:
+                        self._update_panel_error(panel, stat, stat.error)
+                    else:
+                        content = stat.content
+                        req_json = stat.raw_request
+                        res_json = stat.raw_response
+                        self._update_panel_success(panel, content, stat, req_json, res_json)
+                        
+                        self.model_responses[idx] = {
+                            "model": config.name,
+                            "content": content,
+                        }
+                        self.model_json[idx] = {
+                            "request": req_json,
+                            "response": res_json,
+                        }
+                    
+                    self.model_stats[idx] = stat
+                    
                 elif op_type == "eval_json":
                     self.eval_area.set_eval_json(
                         op.get("request", {}),
@@ -458,6 +485,7 @@ class MainWindow(QMainWindow):
         self._set_all_run_buttons_enabled(False)
         self.eval_area.set_evaluate_enabled(False)
         self.stop_btn.setEnabled(True)
+        self._log(f"Stop button enabled: {self.stop_btn.isEnabled()}")
 
         def on_complete(idx, stat, model_name):
             self.ui_queue.put({
@@ -570,6 +598,7 @@ class MainWindow(QMainWindow):
 
         for panel in self.model_panels:
             panel.clear_response()
+            panel.set_running(True)
 
         self.eval_area.clear_eval_result()
         self.log_widget.clear()
@@ -619,6 +648,16 @@ class MainWindow(QMainWindow):
                 self._log("--- END REQUEST ---")
 
             self._log("Sending requests...")
+
+            def on_model_complete(idx, stat, model_name):
+                self.ui_queue.put({
+                    "type": "model_complete",
+                    "index": idx,
+                    "stat": stat,
+                    "model_name": model_name,
+                    "panel": self.model_panels[idx] if idx < len(self.model_panels) else None,
+                    "config": model_configs[idx] if idx < len(model_configs) else None,
+                })
             
             if mode == "parallel":
                 stats = loop.run_until_complete(
@@ -626,7 +665,8 @@ class MainWindow(QMainWindow):
                         system_prompt,
                         user_prompt,
                         model_configs,
-                        self._progress_callback
+                        self._progress_callback,
+                        on_model_complete
                     )
                 )
             else:
@@ -638,7 +678,8 @@ class MainWindow(QMainWindow):
                         user_prompt,
                         model_configs,
                         delay,
-                        self._progress_callback
+                        self._progress_callback,
+                        on_model_complete
                     )
                 )
             
@@ -727,6 +768,8 @@ class MainWindow(QMainWindow):
 
     def _on_experiment_complete(self):
         self._set_all_run_buttons_enabled(True)
+        for panel in self.model_panels:
+            panel.set_running(False)
         self.ui_queue.put({"type": "enable_stop", "enabled": False})
 
         has_successful = any(
@@ -740,7 +783,8 @@ class MainWindow(QMainWindow):
     def _set_all_run_buttons_enabled(self, enabled: bool):
         self.run_btn.setEnabled(enabled)
         for panel in self.model_panels:
-            panel.set_run_enabled(enabled)
+            if not panel._is_running:
+                panel.run_btn.setEnabled(enabled)
 
     def _progress_callback(self, index: int, status: str, model_name: str):
         if index < len(self.model_panels):
@@ -753,7 +797,11 @@ class MainWindow(QMainWindow):
         self._log(f"[Model {index+1}] {status}...")
 
     def _stop(self):
-        self._log("Stopping...")
+        self._log("Stopping all models...")
+        if hasattr(self, 'experiment') and self.experiment:
+            self.experiment.cancel()
+        for panel in self.model_panels:
+            panel.set_running(False)
         self.run_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.status_bar.showMessage("Stopped")
@@ -820,17 +868,22 @@ class MainWindow(QMainWindow):
         self._log("Starting evaluation...")
 
         def run_eval():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
                 self._log("Sending evaluation request...")
                 eval_system_prompt = self.settings.get("eval_model", {}).get("system_prompt", "")
-                result, raw = self.evaluator.evaluate(
-                    eval_model=eval_config["model"],
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    responses=responses,
-                    temperature=eval_config.get("temperature", 0.3),
-                    custom_endpoint=eval_config.get("custom_endpoint", ""),
-                    eval_system_prompt=eval_system_prompt,
+                result, raw = loop.run_until_complete(
+                    self.evaluator.evaluate(
+                        eval_model=eval_config["model"],
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        responses=responses,
+                        temperature=eval_config.get("temperature", 0.3),
+                        custom_endpoint=eval_config.get("custom_endpoint", ""),
+                        eval_system_prompt=eval_system_prompt,
+                    )
                 )
 
                 self.statistics.set_eval_result(result, eval_config["model"])
@@ -854,6 +907,7 @@ class MainWindow(QMainWindow):
             finally:
                 self.ui_queue.put({"type": "enable_eval", "enabled": True})
                 self._set_all_run_buttons_enabled(True)
+                loop.close()
 
         thread = threading.Thread(target=run_eval)
         thread.start()
