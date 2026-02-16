@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from ..api.client import LLMAPIClient, ModelResponse
 from ..core.statistics import ModelStats
@@ -9,7 +10,7 @@ class Evaluator:
     def __init__(self, client: LLMAPIClient):
         self.client = client
 
-    def evaluate(
+    async def evaluate(
         self,
         eval_model: str,
         system_prompt: str,
@@ -25,7 +26,7 @@ class Evaluator:
 
         final_system_prompt = eval_system_prompt if eval_system_prompt else self.DEFAULT_SYSTEM_PROMPT
 
-        result = self.client.chat_completion(
+        result = await self.client.chat_completion(
             model=eval_model,
             system_prompt=final_system_prompt,
             user_prompt=eval_prompt,

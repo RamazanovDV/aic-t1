@@ -37,19 +37,9 @@ class ModelPanel(QWidget):
     config_changed = pyqtSignal()
     dropdown_opened = pyqtSignal()
     run_clicked = pyqtSignal()
+    stop_clicked = pyqtSignal()
 
-    DEFAULT_MODELS = [
-        "gpt-4",
-        "gpt-4-turbo",
-        "gpt-4o",
-        "gpt-3.5-turbo",
-        "gpt-3.5-turbo-16k",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-    ]
+    DEFAULT_MODELS = []
 
     def __init__(self, title: str = "Model", parent=None):
         super().__init__(parent)
@@ -72,19 +62,14 @@ class ModelPanel(QWidget):
         self.model_combo.currentTextChanged.connect(self.config_changed.emit)
         top_row.addWidget(self.model_combo)
 
-        self.refresh_btn = QPushButton("↻")
-        self.refresh_btn.setFixedWidth(30)
-        self.refresh_btn.setToolTip("Обновить список моделей")
-        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
-        top_row.addWidget(self.refresh_btn)
-
         self.status_indicator = StatusIndicator()
         top_row.addWidget(self.status_indicator)
 
         self.run_btn = QPushButton("Run")
         self.run_btn.setFixedWidth(60)
         self.run_btn.setToolTip("Запустить эту модель")
-        self.run_btn.clicked.connect(self.run_clicked.emit)
+        self.run_btn.clicked.connect(self._on_run_btn_clicked)
+        self._is_running = False
         top_row.addWidget(self.run_btn)
 
         top_row.addStretch()
@@ -167,8 +152,20 @@ class ModelPanel(QWidget):
         group.setLayout(group_layout)
         layout.addWidget(group)
 
-    def _on_refresh_clicked(self):
-        self.dropdown_opened.emit()
+    def _on_run_btn_clicked(self):
+        if self._is_running:
+            self.stop_clicked.emit()
+        else:
+            self.run_clicked.emit()
+
+    def set_running(self, running: bool):
+        self._is_running = running
+        if running:
+            self.run_btn.setText("Stop")
+            self.run_btn.setToolTip("Остановить выполнение")
+        else:
+            self.run_btn.setText("Run")
+            self.run_btn.setToolTip("Запустить эту модель")
 
     def get_model_config(self):
         from ..core.experiment import ModelConfig

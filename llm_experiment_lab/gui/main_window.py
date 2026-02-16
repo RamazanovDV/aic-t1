@@ -103,6 +103,27 @@ class MainWindow(QMainWindow):
                 })
             self.settings["models"] = model_configs
             
+            model_lists = {}
+            api_cfg = self.settings.get("api", {})
+            base_url = api_cfg.get("base_url", "")
+            
+            for panel in self.model_panels:
+                endpoint = panel.endpoint_edit.text() or base_url
+                if endpoint not in model_lists:
+                    model_lists[endpoint] = []
+                current_items = [panel.model_combo.itemText(i) for i in range(panel.model_combo.count())]
+                if current_items and current_items[0]:
+                    model_lists[endpoint] = current_items
+            
+            eval_endpoint = self.eval_area.eval_endpoint.text() or base_url
+            if eval_endpoint not in model_lists:
+                model_lists[eval_endpoint] = []
+            eval_items = [self.eval_area.eval_model_combo.itemText(i) for i in range(self.eval_area.eval_model_combo.count())]
+            if eval_items and eval_items[0]:
+                model_lists[eval_endpoint] = eval_items
+            
+            self.settings["model_lists"] = model_lists
+            
             self.settings["prompts"] = {
                 "system": self.prompts_area.get_system_prompt(),
                 "user": self.prompts_area.get_user_prompt(),
@@ -146,6 +167,7 @@ class MainWindow(QMainWindow):
         for i, panel in enumerate(self.model_panels):
             panel.dropdown_opened.connect(self._on_dropdown_opened)
             panel.run_clicked.connect(lambda idx=i: self._run_single(idx))
+            panel.stop_clicked.connect(lambda idx=i: self._stop_model(idx))
             models_layout.addWidget(panel)
         models_widget.setLayout(models_layout)
         splitter.addWidget(models_widget)
@@ -161,6 +183,10 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.stop_btn)
 
         control_layout.addStretch()
+
+        self.refresh_models_btn = QPushButton("Refresh Models")
+        self.refresh_models_btn.clicked.connect(self._refresh_all_models)
+        control_layout.addWidget(self.refresh_models_btn)
 
         self.settings_btn = QPushButton("Settings")
         self.settings_btn.clicked.connect(self._show_settings)
@@ -207,6 +233,23 @@ class MainWindow(QMainWindow):
                 panel.temp_spin.setValue(model_data.get("temperature", 0.7))
                 panel.top_p_spin.setValue(model_data.get("top_p", 1.0))
                 panel.top_k_spin.setValue(model_data.get("top_k", -1))
+
+        api_cfg = self.settings.get("api", {})
+        base_url = api_cfg.get("base_url", "")
+        model_lists = self.settings.get("model_lists", {})
+        
+        for panel in self.model_panels:
+            endpoint = panel.endpoint_edit.text() or base_url
+            if endpoint in model_lists and model_lists[endpoint]:
+                panel.set_model_list(model_lists[endpoint])
+        
+        eval_endpoint = self.eval_area.eval_endpoint.text() or base_url
+        if eval_endpoint in model_lists and model_lists[eval_endpoint]:
+            current = self.eval_area.eval_model_combo.currentText()
+            self.eval_area.eval_model_combo.clear()
+            self.eval_area.eval_model_combo.addItems(model_lists[eval_endpoint])
+            if current in model_lists[eval_endpoint]:
+                self.eval_area.eval_model_combo.setCurrentText(current)
 
         saved_prompts = self.settings.get("prompts", {})
         if saved_prompts:
@@ -271,37 +314,108 @@ class MainWindow(QMainWindow):
                         op.get("request", {}),
                         op.get("response", {})
                     )
+                elif op_type == "update_models":
+                    models = op.get("models", [])
+                    endpoint = op.get("endpoint", "")
+                    self._update_model_lists(models, endpoint)
             except queue.Empty:
                 break
 
-    def _refresh_models(self):
+    def _refresh_all_models(self):
         api_cfg = self.settings.get("api", {})
         if not api_cfg.get("api_key"):
+            self._log("No API key configured")
             return
 
-        self._create_client()
-        self._log("Fetching models from API...")
+        endpoints = set()
+        base_url = api_cfg.get("base_url", "")
+        if base_url:
+            endpoints.add(base_url)
+
+        for panel in self.model_panels:
+            endpoint = panel.endpoint_edit.text()
+            if endpoint:
+                endpoints.add(endpoint)
+
+        eval_endpoint = self.eval_area.eval_endpoint.text()
+        if eval_endpoint:
+            endpoints.add(eval_endpoint)
+
+        self._log(f"Refreshing models for {len(endpoints)} endpoints: {endpoints}")
+
+        for endpoint in endpoints:
+            self._refresh_models(endpoint)
+
+    def _refresh_models(self, endpoint: str = ""):
+        api_cfg = self.settings.get("api", {})
+        if not api_cfg.get("api_key"):
+            self._log("No API key configured")
+            return
+
+        base_url = endpoint if endpoint else api_cfg.get("base_url", "")
+        self._log(f"Fetching models from {base_url}/models...")
         
         def fetch_models():
             try:
-                models, error = self.client.list_models()
-                if error:
-                    QTimer.singleShot(0, lambda: self._log(f"Error fetching models: {error}"))
-                else:
-                    QTimer.singleShot(0, lambda: self._update_model_lists(models))
+                import httpx
+                headers = {"Authorization": f"Bearer {api_cfg.get('api_key', '')}"}
+                with httpx.Client(verify=api_cfg.get("verify_ssl", True)) as client:
+                    response = client.get(f"{base_url}/models", headers=headers, timeout=30.0)
+                    self._log(f"Response status: {response.status_code}")
+                    self._log(f"Response body: {response.text[:2000]}")
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = [m.get("id") for m in data.get("data", [])]
+                        self._log(f"Parsed models: {models}")
+                        self.ui_queue.put({"type": "update_models", "models": models, "endpoint": endpoint})
+                    else:
+                        self._log(f"Error: {response.status_code} - {response.text[:500]}")
             except Exception as e:
-                QTimer.singleShot(0, lambda: self._log(f"Error: {str(e)}"))
+                import traceback
+                self._log(f"Error: {str(e)}")
+                self._log(traceback.format_exc())
 
         thread = threading.Thread(target=fetch_models)
         thread.start()
 
-    def _update_model_lists(self, models: list):
-        if models:
-            for panel in self.model_panels:
-                panel.set_model_list(models)
-            self._log(f"Loaded {len(models)} models from API")
-        else:
+    def _update_model_lists(self, models: list, endpoint: str = ""):
+        if not models:
             self._log("No models returned from API")
+            return
+        
+        api_cfg = self.settings.get("api", {})
+        base_url = api_cfg.get("base_url", "")
+        
+        is_default_endpoint = endpoint == base_url
+        
+        updated = False
+        
+        for i, panel in enumerate(self.model_panels):
+            panel_endpoint = panel.endpoint_edit.text()
+            should_update = (
+                (endpoint and panel_endpoint == endpoint) or
+                (is_default_endpoint and not panel_endpoint)
+            )
+            if should_update:
+                panel.set_model_list(models)
+                updated = True
+        
+        eval_endpoint = self.eval_area.eval_endpoint.text()
+        should_update_eval = (
+            (endpoint and eval_endpoint == endpoint) or
+            (is_default_endpoint and not eval_endpoint)
+        )
+        if should_update_eval:
+            current = self.eval_area.eval_model_combo.currentText()
+            self.eval_area.eval_model_combo.clear()
+            self.eval_area.eval_model_combo.addItems(models)
+            if current in models:
+                self.eval_area.eval_model_combo.setCurrentText(current)
+            updated = True
+        
+        if updated:
+            self._log(f"Loaded {len(models)} models from API")
 
     def _on_dropdown_opened(self):
         api_cfg = self.settings.get("api", {})
@@ -338,11 +452,22 @@ class MainWindow(QMainWindow):
             del self.model_json[index]
 
         panel.clear_response()
+        panel.set_running(True)
         self._log(f"Starting single model run: {config.name}...")
 
         self._set_all_run_buttons_enabled(False)
         self.eval_area.set_evaluate_enabled(False)
         self.stop_btn.setEnabled(True)
+
+        def on_complete(idx, stat, model_name):
+            self.ui_queue.put({
+                "type": "model_complete",
+                "index": idx,
+                "stat": stat,
+                "model_name": model_name,
+                "panel": panel,
+                "config": config,
+            })
 
         def run_single_model():
             import asyncio
@@ -371,7 +496,8 @@ class MainWindow(QMainWindow):
                         user_prompt,
                         config,
                         index,
-                        lambda idx, status, model_nm: self._progress_callback(idx, status, config.name)
+                        lambda idx, status, model_nm: self._progress_callback(idx, status, config.name),
+                        on_complete
                     )
                 )
 
@@ -395,15 +521,24 @@ class MainWindow(QMainWindow):
                 self.model_stats[index] = stat
 
                 self._on_single_complete()
+                panel.set_running(False)
             except Exception as e:
                 self._log(f"ERROR: {str(e)}")
                 self._log(traceback.format_exc())
                 self._on_single_complete()
+                panel.set_running(False)
             finally:
                 loop.close()
 
         thread = threading.Thread(target=run_single_model)
         thread.start()
+
+    def _stop_model(self, index: int):
+        if hasattr(self, 'experiment') and self.experiment:
+            self._log(f"Stopping model {index + 1}...")
+            self.experiment.cancel()
+            self.model_panels[index].set_running(False)
+            self._log(f"Model {index + 1} stopped")
 
     def _on_single_complete(self):
         self._set_all_run_buttons_enabled(True)

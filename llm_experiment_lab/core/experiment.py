@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Any
 
 from ..api.client import LLMAPIClient, ModelResponse
 from ..core.statistics import ModelStats
@@ -18,6 +18,14 @@ class ModelConfig:
 class Experiment:
     def __init__(self, client: LLMAPIClient):
         self.client = client
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+        self.client.cancel_request()
+
+    def reset_cancel(self):
+        self._is_cancelled = False
 
     async def run_single(
         self,
@@ -26,9 +34,10 @@ class Experiment:
         model: ModelConfig,
         index: int = 0,
         progress_callback: Optional[Callable] = None,
+        complete_callback: Optional[Callable] = None,
     ) -> ModelStats:
         return await self._run_model(
-            system_prompt, user_prompt, model, index, progress_callback
+            system_prompt, user_prompt, model, index, progress_callback, complete_callback
         )
 
     async def run_parallel(
@@ -37,16 +46,37 @@ class Experiment:
         user_prompt: str,
         models: List[ModelConfig],
         progress_callback: Optional[Callable] = None,
+        complete_callback: Optional[Callable] = None,
     ) -> List[ModelStats]:
+        self.reset_cancel()
         tasks = []
         for i, model in enumerate(models):
             task = self._run_model(
-                system_prompt, user_prompt, model, i, progress_callback
+                system_prompt, user_prompt, model, i, progress_callback, complete_callback
             )
             tasks.append(task)
 
-        results = await asyncio.gather(*tasks)
-        return results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        final_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                stats = ModelStats(
+                    model_name=models[i].name,
+                    response_time=0,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    content="",
+                    raw_request={},
+                    raw_response={},
+                    error=str(result),
+                )
+                final_results.append(stats)
+            else:
+                final_results.append(result)
+        
+        return final_results
 
     async def run_sequential(
         self,
@@ -55,14 +85,18 @@ class Experiment:
         models: List[ModelConfig],
         delay: float = 1.0,
         progress_callback: Optional[Callable] = None,
+        complete_callback: Optional[Callable] = None,
     ) -> List[ModelStats]:
+        self.reset_cancel()
         results = []
         for i, model in enumerate(models):
+            if self._is_cancelled:
+                break
             result = await self._run_model(
-                system_prompt, user_prompt, model, i, progress_callback
+                system_prompt, user_prompt, model, i, progress_callback, complete_callback
             )
             results.append(result)
-            if i < len(models) - 1 and delay > 0:
+            if i < len(models) - 1 and delay > 0 and not self._is_cancelled:
                 await asyncio.sleep(delay)
         return results
 
@@ -73,14 +107,25 @@ class Experiment:
         model: ModelConfig,
         index: int,
         progress_callback: Optional[Callable] = None,
+        complete_callback: Optional[Callable] = None,
     ) -> ModelStats:
+        if self._is_cancelled:
+            return ModelStats(
+                model_name=model.name,
+                response_time=0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                content="",
+                raw_request={},
+                raw_response={},
+                error="Cancelled",
+            )
+
         if progress_callback:
             progress_callback(index, "running", model.name)
 
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            self.client.chat_completion,
+        response = await self.client.chat_completion(
             model.name,
             system_prompt,
             user_prompt,
@@ -89,6 +134,10 @@ class Experiment:
             model.top_k,
             model.custom_endpoint,
         )
+
+        if self._is_cancelled and response.error != "Cancelled":
+            response.error = "Cancelled"
+            response.content = ""
 
         stats = ModelStats(
             model_name=model.name,
@@ -102,9 +151,12 @@ class Experiment:
             error=response.error,
         )
 
+        status = "error" if response.error else "completed"
         if progress_callback:
-            status = "error" if response.error else "completed"
             progress_callback(index, status, model.name)
+
+        if complete_callback:
+            complete_callback(index, stats, model.name)
 
         return stats
 

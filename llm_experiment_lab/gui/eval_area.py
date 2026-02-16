@@ -9,11 +9,7 @@ from PyQt6.QtCore import pyqtSignal
 class EvalArea(QWidget):
     evaluate_clicked = pyqtSignal()
 
-    DEFAULT_EVAL_MODELS = [
-        "gpt-4",
-        "gpt-4o",
-        "gpt-3.5-turbo",
-    ]
+    DEFAULT_EVAL_MODELS = []
 
     def __init__(self, parent=None):
         super().__init__(parent)

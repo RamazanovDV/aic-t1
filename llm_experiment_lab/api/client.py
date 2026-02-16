@@ -1,5 +1,6 @@
 import json
 import time
+import asyncio
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -28,8 +29,9 @@ class LLMAPIClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
+        self._cancel_event: Optional[asyncio.Event] = None
 
-    def chat_completion(
+    async def chat_completion(
         self,
         model: str,
         system_prompt: str,
@@ -63,9 +65,26 @@ class LLMAPIClient:
 
         start_time = time.time()
 
+        if self._cancel_event is None:
+            self._cancel_event = asyncio.Event()
+
         try:
-            with httpx.Client(verify=self.verify_ssl, timeout=120.0) as client:
-                response = client.post(endpoint, json=request_data, headers=headers)
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=120.0) as client:
+                self._cancel_event.clear()
+                response = await client.post(endpoint, json=request_data, headers=headers)
+                
+                if self._cancel_event.is_set():
+                    return ModelResponse(
+                        content="",
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        total_tokens=0,
+                        response_time=time.time() - start_time,
+                        raw_request=request_data,
+                        raw_response={},
+                        error="Cancelled",
+                    )
+                
                 response.raise_for_status()
                 response_json = response.json()
 
@@ -103,6 +122,19 @@ class LLMAPIClient:
                 error=error_msg,
             )
 
+        except asyncio.CancelledError:
+            response_time = time.time() - start_time
+            return ModelResponse(
+                content="",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                response_time=response_time,
+                raw_request=request_data,
+                raw_response={},
+                error="Cancelled",
+            )
+
         except Exception as e:
             response_time = time.time() - start_time
             return ModelResponse(
@@ -115,6 +147,10 @@ class LLMAPIClient:
                 raw_response={},
                 error=str(e),
             )
+
+    def cancel_request(self):
+        if self._cancel_event is not None:
+            self._cancel_event.set()
 
     def list_models(self) -> tuple[List[str], Optional[str]]:
         headers = {
