@@ -1,9 +1,7 @@
 import json
+import re
 
-import markdown
-from pygments import highlight
-from pygments.lexers import get_lexer_by_name, TextLexer
-from pygments.formatters import HtmlFormatter
+import mistune
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -218,33 +216,16 @@ class ModelPanel(QWidget):
         if not text:
             return ""
         
-        md = markdown.Markdown(extensions=['extra', 'codehilite'])
+        md = mistune.create_markdown(plugins=['table', 'strikethrough', 'url'])
         
-        def code_block_replace(match):
-            code = match.group(1)
-            lang = match.group(2) or ''
-            try:
-                if lang:
-                    lexer = get_lexer_by_name(lang)
-                else:
-                    lexer = TextLexer()
-            except Exception:
-                lexer = TextLexer()
-            formatter = HtmlFormatter(nowrap=True)
-            highlighted = highlight(code, lexer, formatter)
-            return f'<pre><code class="language-{lang}">{highlighted}</code></pre>'
-        
-        import re
-        text = re.sub(r'```(\w*)\n(.*?)```', code_block_replace, text, flags=re.DOTALL)
-        
-        html = md.convert(text)
+        html = md(text)
         
         style = """
         <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.0;
             color: #e0e0e0;
             background-color: #2b2b2b;
             padding: 10px;

@@ -7,7 +7,7 @@ from functools import partial
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QSplitter,
-    QStatusBar, QTextEdit,
+    QStatusBar, QTextEdit, QLabel,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
 
@@ -132,6 +132,16 @@ class MainWindow(QMainWindow):
                 "name": self.eval_area.eval_model_combo.currentText(),
             }
             
+            self.settings["window"] = {
+                "geometry": {
+                    "x": self.x(),
+                    "y": self.y(),
+                    "width": self.width(),
+                    "height": self.height(),
+                },
+                "main_splitter_sizes": self.main_splitter.sizes() if hasattr(self, 'main_splitter') else [],
+            }
+            
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.settings, f, indent=2)
         except Exception as e:
@@ -151,6 +161,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -191,6 +202,7 @@ class MainWindow(QMainWindow):
 
         control_widget = QWidget()
         control_widget.setLayout(control_layout)
+        control_widget.setFixedHeight(50)
         splitter.addWidget(control_widget)
 
         self.prompts_area = PromptsArea()
@@ -201,24 +213,24 @@ class MainWindow(QMainWindow):
         self.eval_area.set_evaluate_enabled(False)
         splitter.addWidget(self.eval_area)
 
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 0)
-        splitter.setStretchFactor(2, 1)
-        splitter.setStretchFactor(3, 1)
-
-        layout.addWidget(splitter)
-
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
-        self.log_widget.setMaximumHeight(100)
         self.log_widget.setPlaceholderText("Log output...")
-        layout.addWidget(self.log_widget)
+        self.log_widget.setMinimumHeight(0)
+        splitter.addWidget(self.log_widget)
+
+        splitter.setSizes([300, 50, 150, 200, 0])
+
+        layout.addWidget(splitter)
+        
+        self.main_splitter = splitter
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
 
         self._load_saved_models()
+        self._restore_window_state()
 
     def _load_saved_models(self):
         saved_models = self.settings.get("models", [])
@@ -256,6 +268,22 @@ class MainWindow(QMainWindow):
         if saved_eval:
             self.eval_area.set_eval_model(saved_eval.get("name", "gpt-4"))
             self.eval_area.eval_temp_spin.setValue(saved_eval.get("temperature", 0.3))
+
+    def _restore_window_state(self):
+        window_settings = self.settings.get("window", {})
+        geometry = window_settings.get("geometry", {})
+        
+        if geometry:
+            x = geometry.get("x", 100)
+            y = geometry.get("y", 100)
+            width = geometry.get("width", 1200)
+            height = geometry.get("height", 800)
+            self.setGeometry(x, y, width, height)
+        
+        if hasattr(self, 'main_splitter'):
+            main_sizes = window_settings.get("main_splitter_sizes", [])
+            if main_sizes:
+                self.main_splitter.setSizes(main_sizes)
 
     def _log(self, message: str):
         self.log_queue.put(message)

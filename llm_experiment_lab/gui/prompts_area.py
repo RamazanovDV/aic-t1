@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTextEdit, QGroupBox,
+    QWidget, QVBoxLayout, QLabel,
+    QTextEdit, QGroupBox, QSizePolicy,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -19,23 +19,21 @@ class PromptsArea(QWidget):
         group = QGroupBox("Prompts")
         group_layout = QVBoxLayout()
 
-        sys_layout = QHBoxLayout()
-        sys_layout.addWidget(QLabel("System:"))
+        group_layout.addWidget(QLabel("System prompt:"))
         self.system_edit = QTextEdit()
         self.system_edit.setPlaceholderText("Enter system prompt...")
-        self.system_edit.setMaximumHeight(80)
+        self.system_edit.setMinimumHeight(60)
+        self.system_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         self.system_edit.textChanged.connect(self.changed.emit)
-        sys_layout.addWidget(self.system_edit)
-        group_layout.addLayout(sys_layout)
+        group_layout.addWidget(self.system_edit)
 
-        user_layout = QHBoxLayout()
-        user_layout.addWidget(QLabel("User:"))
+        group_layout.addWidget(QLabel("User prompt:"))
         self.user_edit = QTextEdit()
         self.user_edit.setPlaceholderText("Enter user prompt...")
-        self.user_edit.setMaximumHeight(120)
+        self.user_edit.setMinimumHeight(80)
+        self.user_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         self.user_edit.textChanged.connect(self.changed.emit)
-        user_layout.addWidget(self.user_edit)
-        group_layout.addLayout(user_layout)
+        group_layout.addWidget(self.user_edit)
 
         group.setLayout(group_layout)
         layout.addWidget(group)

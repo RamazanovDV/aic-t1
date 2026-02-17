@@ -1,9 +1,7 @@
 import json
+import re
 
-import markdown
-from pygments import highlight
-from pygments.lexers import get_lexer_by_name, TextLexer
-from pygments.formatters import HtmlFormatter
+import mistune
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -34,22 +32,20 @@ class EvalArea(QWidget):
 
         settings_layout = QHBoxLayout()
 
-        model_layout = QVBoxLayout()
-        model_layout.addWidget(QLabel("Eval Model:"))
+        eval_model_label = QLabel("Eval Model:")
         self.eval_model_combo = QComboBox()
         self.eval_model_combo.addItems(self.DEFAULT_EVAL_MODELS)
         self.eval_model_combo.setEditable(True)
-        model_layout.addWidget(self.eval_model_combo)
-        settings_layout.addLayout(model_layout)
+        settings_layout.addWidget(eval_model_label)
+        settings_layout.addWidget(self.eval_model_combo)
 
-        temp_layout = QVBoxLayout()
-        temp_layout.addWidget(QLabel("Temperature:"))
+        temp_label = QLabel("Temperature:")
         self.eval_temp_spin = QDoubleSpinBox()
         self.eval_temp_spin.setRange(0.0, 2.0)
         self.eval_temp_spin.setSingleStep(0.1)
         self.eval_temp_spin.setValue(0.3)
-        temp_layout.addWidget(self.eval_temp_spin)
-        settings_layout.addLayout(temp_layout)
+        settings_layout.addWidget(temp_label)
+        settings_layout.addWidget(self.eval_temp_spin)
 
         self.evaluate_btn = QPushButton("Run Evaluation")
         self.evaluate_btn.clicked.connect(self.evaluate_clicked.emit)
@@ -137,33 +133,16 @@ class EvalArea(QWidget):
         if not text:
             return ""
         
-        md = markdown.Markdown(extensions=['extra', 'codehilite'])
+        md = mistune.create_markdown(plugins=['table', 'strikethrough', 'url'])
         
-        def code_block_replace(match):
-            code = match.group(1)
-            lang = match.group(2) or ''
-            try:
-                if lang:
-                    lexer = get_lexer_by_name(lang)
-                else:
-                    lexer = TextLexer()
-            except Exception:
-                lexer = TextLexer()
-            formatter = HtmlFormatter(nowrap=True)
-            highlighted = highlight(code, lexer, formatter)
-            return f'<pre><code class="language-{lang}">{highlighted}</code></pre>'
-        
-        import re
-        text = re.sub(r'```(\w*)\n(.*?)```', code_block_replace, text, flags=re.DOTALL)
-        
-        html = md.convert(text)
+        html = md(text)
         
         style = """
         <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.0;
             color: #e0e0e0;
             background-color: #2b2b2b;
             padding: 10px;
