@@ -77,19 +77,14 @@ class ModelPanel(QWidget):
         self._is_running = False
         top_row.addWidget(self.run_btn)
 
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setFixedWidth(30)
+        self.settings_btn.setToolTip("Model settings")
+        self.settings_btn.clicked.connect(self._on_settings_btn_clicked)
+        top_row.addWidget(self.settings_btn)
+
         top_row.addStretch()
         group_layout.addLayout(top_row)
-
-        endpoint_row = QHBoxLayout()
-        endpoint_label = QLabel("Endpoint:")
-        endpoint_label.setToolTip("Кастомный endpoint API (оставьте пустым для использования Base URL из настроек)")
-        endpoint_row.addWidget(endpoint_label)
-        self.endpoint_edit = QLineEdit()
-        self.endpoint_edit.setPlaceholderText("Optional custom endpoint...")
-        self.endpoint_edit.setToolTip("Кастомный endpoint API (оставьте пустым для использования Base URL из настроек)")
-        self.endpoint_edit.textChanged.connect(self.config_changed.emit)
-        endpoint_row.addWidget(self.endpoint_edit)
-        group_layout.addLayout(endpoint_row)
 
         params_group = QGroupBox("Parameters")
         params_layout = QHBoxLayout()
@@ -147,16 +142,6 @@ class ModelPanel(QWidget):
         self.prompt_modifier_edit.textChanged.connect(self.config_changed.emit)
         group_layout.addWidget(self.prompt_modifier_edit)
 
-        stop_sequences_label = QLabel("Stop sequences (comma-separated):")
-        stop_sequences_label.setToolTip("Stop sequences - model will stop generating when it encounters these")
-        group_layout.addWidget(stop_sequences_label)
-
-        self.stop_sequences_edit = QLineEdit()
-        self.stop_sequences_edit.setPlaceholderText("e.g., END, ---, ###")
-        self.stop_sequences_edit.setToolTip("Stop sequences - model will stop generating when it encounters these")
-        self.stop_sequences_edit.textChanged.connect(self.config_changed.emit)
-        group_layout.addWidget(self.stop_sequences_edit)
-
         stats_row = QHBoxLayout()
         self.time_label = QLabel("Time: --")
         self.tokens_label = QLabel("Tokens: --")
@@ -207,18 +192,41 @@ class ModelPanel(QWidget):
             self.run_btn.setText("Run")
             self.run_btn.setToolTip("Запустить эту модель")
 
+    def _on_settings_btn_clicked(self):
+        from .model_settings_dialog import ModelSettingsDialog
+        dialog = ModelSettingsDialog(self)
+        dialog.set_settings({
+            "custom_endpoint": getattr(self, "_custom_endpoint", ""),
+            "custom_api_token": getattr(self, "_custom_api_token", ""),
+            "max_tokens": getattr(self, "_max_tokens", 0),
+            "stop_sequences": getattr(self, "_stop_sequences", []),
+            "frequency_penalty": getattr(self, "_frequency_penalty", 0.0),
+            "presence_penalty": getattr(self, "_presence_penalty", 0.0),
+        })
+        if dialog.exec():
+            settings = dialog.get_settings()
+            self._custom_endpoint = settings["custom_endpoint"]
+            self._custom_api_token = settings["custom_api_token"]
+            self._max_tokens = settings["max_tokens"]
+            self._stop_sequences = settings["stop_sequences"]
+            self._frequency_penalty = settings["frequency_penalty"]
+            self._presence_penalty = settings["presence_penalty"]
+            self.config_changed.emit()
+
     def get_model_config(self):
         from ..core.experiment import ModelConfig
-        stop_text = self.stop_sequences_edit.text().strip()
-        stop_sequences = [s.strip() for s in stop_text.split(",") if s.strip()]
         return ModelConfig(
             name=self.model_combo.currentText(),
-            custom_endpoint=self.endpoint_edit.text(),
+            custom_endpoint=getattr(self, "_custom_endpoint", ""),
+            custom_api_token=getattr(self, "_custom_api_token", ""),
             temperature=self.temp_spin.value(),
             top_p=self.top_p_spin.value(),
             top_k=self.top_k_spin.value(),
             prompt_modifier=self.prompt_modifier_edit.toPlainText(),
-            stop_sequences=stop_sequences,
+            stop_sequences=getattr(self, "_stop_sequences", []),
+            max_tokens=getattr(self, "_max_tokens", 0),
+            frequency_penalty=getattr(self, "_frequency_penalty", 0.0),
+            presence_penalty=getattr(self, "_presence_penalty", 0.0),
         )
 
     def get_prompt_modifier(self) -> str:
@@ -227,11 +235,23 @@ class ModelPanel(QWidget):
     def set_prompt_modifier(self, text: str):
         self.prompt_modifier_edit.setPlainText(text)
 
-    def get_stop_sequences(self) -> str:
-        return self.stop_sequences_edit.text().strip()
+    def get_custom_settings(self) -> dict:
+        return {
+            "custom_endpoint": getattr(self, "_custom_endpoint", ""),
+            "custom_api_token": getattr(self, "_custom_api_token", ""),
+            "max_tokens": getattr(self, "_max_tokens", 0),
+            "stop_sequences": getattr(self, "_stop_sequences", []),
+            "frequency_penalty": getattr(self, "_frequency_penalty", 0.0),
+            "presence_penalty": getattr(self, "_presence_penalty", 0.0),
+        }
 
-    def set_stop_sequences(self, text: str):
-        self.stop_sequences_edit.setText(text)
+    def set_custom_settings(self, settings: dict):
+        self._custom_endpoint = settings.get("custom_endpoint", "")
+        self._custom_api_token = settings.get("custom_api_token", "")
+        self._max_tokens = settings.get("max_tokens", 0)
+        self._stop_sequences = settings.get("stop_sequences", [])
+        self._frequency_penalty = settings.get("frequency_penalty", 0.0)
+        self._presence_penalty = settings.get("presence_penalty", 0.0)
 
     def _toggle_reasoning(self):
         is_expanded = self.reasoning_toggle.isChecked()
@@ -375,8 +395,9 @@ class ModelPanel(QWidget):
     def set_model_list(self, models: list):
         current = self.model_combo.currentText()
         self.model_combo.clear()
-        self.model_combo.addItems(models)
-        if current in models:
+        sorted_models = sorted(models)
+        self.model_combo.addItems(sorted_models)
+        if current in sorted_models:
             self.model_combo.setCurrentText(current)
 
     def get_raw_json(self) -> dict:

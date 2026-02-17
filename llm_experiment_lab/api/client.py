@@ -41,9 +41,19 @@ class LLMAPIClient:
         top_p: float = 1.0,
         top_k: int = -1,
         custom_endpoint: str = "",
+        custom_api_token: str = "",
         stop: Optional[List[str]] = None,
+        max_tokens: int = 0,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 0.0,
     ) -> ModelResponse:
-        endpoint = custom_endpoint if custom_endpoint else f"{self.base_url}/chat/completions"
+        if custom_endpoint:
+            if "/chat/completions" in custom_endpoint or "/completions" in custom_endpoint:
+                endpoint = custom_endpoint
+            else:
+                endpoint = f"{custom_endpoint.rstrip('/')}/chat/completions"
+        else:
+            endpoint = f"{self.base_url}/chat/completions"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -63,10 +73,37 @@ class LLMAPIClient:
         if stop:
             request_data["stop"] = stop
 
+        if max_tokens > 0:
+            request_data["max_tokens"] = max_tokens
+
+        if frequency_penalty != 0.0:
+            request_data["frequency_penalty"] = frequency_penalty
+
+        if presence_penalty != 0.0:
+            request_data["presence_penalty"] = presence_penalty
+
+        api_token = custom_api_token if custom_api_token else self.api_key
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
         }
+
+        print(f"[DEBUG] API Request:")
+        print(f"  Custom endpoint provided: {custom_endpoint if custom_endpoint else '(none)'}")
+        print(f"  Full URL: {endpoint}")
+        print(f"  Model: {model}")
+        print(f"  Temperature: {temperature}, Top_p: {top_p}, Top_k: {top_k}")
+        print(f"  Request payload: {json.dumps(request_data, indent=2)[:500]}")
+        if stop:
+            print(f"  Stop sequences: {stop}")
+        if max_tokens > 0:
+            print(f"  Max tokens: {max_tokens}")
+        if frequency_penalty != 0.0:
+            print(f"  Frequency penalty: {frequency_penalty}")
+        if presence_penalty != 0.0:
+            print(f"  Presence penalty: {presence_penalty}")
+        print(f"  System prompt length: {len(system_prompt)}")
+        print(f"  User prompt length: {len(user_prompt)}")
 
         start_time = time.time()
 
@@ -74,7 +111,7 @@ class LLMAPIClient:
             self._cancel_event = asyncio.Event()
 
         try:
-            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=120.0) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=120.0, follow_redirects=True) as client:
                 self._cancel_event.clear()
                 response = await client.post(endpoint, json=request_data, headers=headers)
                 
@@ -115,7 +152,11 @@ class LLMAPIClient:
 
         except httpx.HTTPStatusError as e:
             response_time = time.time() - start_time
-            error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+            error_msg = f"HTTP {e.response.status_code}: {e.response.text} (URL: {endpoint})"
+            print(f"[DEBUG] HTTP Error: {e.response.status_code}")
+            print(f"  Response body: {e.response.text}")
+            print(f"  Request URL: {endpoint}")
+            print(f"  Request model: {model}")
             try:
                 error_data = e.response.json()
                 error_msg = error_data.get("error", {}).get("message", error_msg)
@@ -149,6 +190,11 @@ class LLMAPIClient:
 
         except Exception as e:
             response_time = time.time() - start_time
+            print(f"[DEBUG] Exception: {type(e).__name__}: {str(e)}")
+            print(f"  Request endpoint: {endpoint}")
+            print(f"  Request model: {model}")
+            import traceback
+            print(f"  Traceback: {traceback.format_exc()}")
             return ModelResponse(
                 content="",
                 prompt_tokens=0,
@@ -177,7 +223,7 @@ class LLMAPIClient:
 
         for endpoint in endpoints:
             try:
-                with httpx.Client(verify=self.verify_ssl, timeout=30.0) as client:
+                with httpx.Client(verify=self.verify_ssl, timeout=30.0, follow_redirects=True) as client:
                     response = client.get(endpoint, headers=headers)
                     if response.status_code == 404:
                         continue

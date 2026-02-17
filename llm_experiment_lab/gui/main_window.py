@@ -97,11 +97,15 @@ class MainWindow(QMainWindow):
                 model_configs.append({
                     "name": config.name,
                     "custom_endpoint": config.custom_endpoint,
+                    "custom_api_token": config.custom_api_token,
                     "temperature": config.temperature,
                     "top_p": config.top_p,
                     "top_k": config.top_k,
                     "prompt_modifier": config.prompt_modifier,
                     "stop_sequences": config.stop_sequences,
+                    "max_tokens": config.max_tokens,
+                    "frequency_penalty": config.frequency_penalty,
+                    "presence_penalty": config.presence_penalty,
                 })
             self.settings["models"] = model_configs
             
@@ -110,7 +114,8 @@ class MainWindow(QMainWindow):
             base_url = api_cfg.get("base_url", "")
             
             for panel in self.model_panels:
-                endpoint = panel.endpoint_edit.text() or base_url
+                settings = panel.get_custom_settings()
+                endpoint = settings.get("custom_endpoint") or base_url
                 if endpoint not in model_lists:
                     model_lists[endpoint] = []
                 current_items = [panel.model_combo.itemText(i) for i in range(panel.model_combo.count())]
@@ -240,29 +245,35 @@ class MainWindow(QMainWindow):
             if i < len(saved_models):
                 model_data = saved_models[i]
                 panel.set_model(model_data.get("name", ""))
-                panel.endpoint_edit.setText(model_data.get("custom_endpoint", ""))
                 panel.temp_spin.setValue(model_data.get("temperature", 0.7))
                 panel.top_p_spin.setValue(model_data.get("top_p", 1.0))
                 panel.top_k_spin.setValue(model_data.get("top_k", -1))
                 panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
-                stop_sequences = model_data.get("stop_sequences", [])
-                if stop_sequences:
-                    panel.set_stop_sequences(", ".join(stop_sequences))
+                panel.set_custom_settings({
+                    "custom_endpoint": model_data.get("custom_endpoint", ""),
+                    "custom_api_token": model_data.get("custom_api_token", ""),
+                    "max_tokens": model_data.get("max_tokens", 0),
+                    "stop_sequences": model_data.get("stop_sequences", []),
+                    "frequency_penalty": model_data.get("frequency_penalty", 0.0),
+                    "presence_penalty": model_data.get("presence_penalty", 0.0),
+                })
 
         api_cfg = self.settings.get("api", {})
         base_url = api_cfg.get("base_url", "")
         model_lists = self.settings.get("model_lists", {})
         
         for panel in self.model_panels:
-            endpoint = panel.endpoint_edit.text() or base_url
+            settings = panel.get_custom_settings()
+            endpoint = settings.get("custom_endpoint") or base_url
             if endpoint in model_lists and model_lists[endpoint]:
                 panel.set_model_list(model_lists[endpoint])
         
         if base_url in model_lists and model_lists[base_url]:
             current = self.eval_area.eval_model_combo.currentText()
             self.eval_area.eval_model_combo.clear()
-            self.eval_area.eval_model_combo.addItems(model_lists[base_url])
-            if current in model_lists[base_url]:
+            sorted_eval_models = sorted(model_lists[base_url])
+            self.eval_area.eval_model_combo.addItems(sorted_eval_models)
+            if current in sorted_eval_models:
                 self.eval_area.eval_model_combo.setCurrentText(current)
 
         saved_prompts = self.settings.get("prompts", {})
@@ -392,7 +403,8 @@ class MainWindow(QMainWindow):
             endpoints.add(base_url)
 
         for panel in self.model_panels:
-            endpoint = panel.endpoint_edit.text()
+            settings = panel.get_custom_settings()
+            endpoint = settings.get("custom_endpoint")
             if endpoint:
                 endpoints.add(endpoint)
 
@@ -414,7 +426,7 @@ class MainWindow(QMainWindow):
             try:
                 import httpx
                 headers = {"Authorization": f"Bearer {api_cfg.get('api_key', '')}"}
-                with httpx.Client(verify=api_cfg.get("verify_ssl", True)) as client:
+                with httpx.Client(verify=api_cfg.get("verify_ssl", True), follow_redirects=True) as client:
                     response = client.get(f"{base_url}/models", headers=headers, timeout=30.0)
                     self._log(f"Response status: {response.status_code}")
                     self._log(f"Response body: {response.text[:2000]}")
@@ -447,7 +459,8 @@ class MainWindow(QMainWindow):
         updated = False
         
         for i, panel in enumerate(self.model_panels):
-            panel_endpoint = panel.endpoint_edit.text()
+            settings = panel.get_custom_settings()
+            panel_endpoint = settings.get("custom_endpoint", "")
             should_update = (
                 (endpoint and panel_endpoint == endpoint) or
                 (is_default_endpoint and not panel_endpoint)
@@ -460,8 +473,9 @@ class MainWindow(QMainWindow):
         if should_update_eval:
             current = self.eval_area.eval_model_combo.currentText()
             self.eval_area.eval_model_combo.clear()
-            self.eval_area.eval_model_combo.addItems(models)
-            if current in models:
+            sorted_models = sorted(models)
+            self.eval_area.eval_model_combo.addItems(sorted_models)
+            if current in sorted_models:
                 self.eval_area.eval_model_combo.setCurrentText(current)
             updated = True
         
@@ -657,6 +671,12 @@ class MainWindow(QMainWindow):
             self._log(f"Execution mode: {mode}")
             
             for i, config in enumerate(model_configs):
+                endpoint = config.custom_endpoint if config.custom_endpoint else "default"
+                token_info = "default" if not config.custom_api_token else "custom (set)"
+                self._log(f"--- Model {i+1}: {config.name} ---")
+                self._log(f"    Endpoint: {endpoint}")
+                self._log(f"    API Token: {token_info}")
+                
                 req_json = {
                     "model": config.name,
                     "messages": [
@@ -667,6 +687,15 @@ class MainWindow(QMainWindow):
                     "top_p": config.top_p,
                     "top_k": config.top_k if config.top_k > 0 else None,
                 }
+                if config.stop_sequences:
+                    req_json["stop"] = config.stop_sequences
+                if config.max_tokens > 0:
+                    req_json["max_tokens"] = config.max_tokens
+                if config.frequency_penalty != 0.0:
+                    req_json["frequency_penalty"] = config.frequency_penalty
+                if config.presence_penalty != 0.0:
+                    req_json["presence_penalty"] = config.presence_penalty
+                
                 self._log(f"--- Model {i+1}: {config.name} REQUEST ---")
                 self._log(json.dumps(req_json, indent=2, ensure_ascii=False)[:500])
                 self._log("--- END REQUEST ---")

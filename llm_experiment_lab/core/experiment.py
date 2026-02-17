@@ -10,11 +10,15 @@ from ..core.statistics import ModelStats
 class ModelConfig:
     name: str
     custom_endpoint: str = ""
+    custom_api_token: str = ""
     temperature: float = 0.7
     top_p: float = 1.0
     top_k: int = -1
     prompt_modifier: str = ""
     stop_sequences: List[str] = field(default_factory=list)
+    max_tokens: int = 0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
 
 
 class Experiment:
@@ -141,7 +145,11 @@ class Experiment:
             model.top_p,
             model.top_k,
             model.custom_endpoint,
+            model.custom_api_token,
             stop=model.stop_sequences if model.stop_sequences else None,
+            max_tokens=model.max_tokens or 0,
+            frequency_penalty=model.frequency_penalty,
+            presence_penalty=model.presence_penalty,
         )
 
         if self._is_cancelled and response.error != "Cancelled":
