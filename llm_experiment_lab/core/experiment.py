@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Callable, Optional, Any
 
 from ..api.client import LLMAPIClient, ModelResponse
@@ -13,6 +13,8 @@ class ModelConfig:
     temperature: float = 0.7
     top_p: float = 1.0
     top_k: int = -1
+    prompt_modifier: str = ""
+    stop_sequences: List[str] = field(default_factory=list)
 
 
 class Experiment:
@@ -127,14 +129,19 @@ class Experiment:
         if progress_callback:
             progress_callback(index, "running", model.name)
 
+        full_user_prompt = user_prompt
+        if model.prompt_modifier:
+            full_user_prompt = user_prompt + "\n\n" + model.prompt_modifier
+
         response = await self.client.chat_completion(
             model.name,
             system_prompt,
-            user_prompt,
+            full_user_prompt,
             model.temperature,
             model.top_p,
             model.top_k,
             model.custom_endpoint,
+            stop=model.stop_sequences if model.stop_sequences else None,
         )
 
         if self._is_cancelled and response.error != "Cancelled":

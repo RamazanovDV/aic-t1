@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QDoubleSpinBox, QSpinBox, QTextEdit,
     QGroupBox, QLineEdit, QFrame, QPushButton,
-    QDialog, QDialogButtonBox,
+    QDialog, QDialogButtonBox, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent
 from PyQt6.QtGui import QColor, QPalette
@@ -136,6 +136,27 @@ class ModelPanel(QWidget):
         params_group.setLayout(params_layout)
         group_layout.addWidget(params_group)
 
+        modifier_label = QLabel("Prompt modifier (appended to user prompt):")
+        modifier_label.setToolTip("Additional context/instructions for this specific model only")
+        group_layout.addWidget(modifier_label)
+
+        self.prompt_modifier_edit = QTextEdit()
+        self.prompt_modifier_edit.setPlaceholderText("Additional context/instructions for this specific model...")
+        self.prompt_modifier_edit.setFixedHeight(60)
+        self.prompt_modifier_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.prompt_modifier_edit.textChanged.connect(self.config_changed.emit)
+        group_layout.addWidget(self.prompt_modifier_edit)
+
+        stop_sequences_label = QLabel("Stop sequences (comma-separated):")
+        stop_sequences_label.setToolTip("Stop sequences - model will stop generating when it encounters these")
+        group_layout.addWidget(stop_sequences_label)
+
+        self.stop_sequences_edit = QLineEdit()
+        self.stop_sequences_edit.setPlaceholderText("e.g., END, ---, ###")
+        self.stop_sequences_edit.setToolTip("Stop sequences - model will stop generating when it encounters these")
+        self.stop_sequences_edit.textChanged.connect(self.config_changed.emit)
+        group_layout.addWidget(self.stop_sequences_edit)
+
         stats_row = QHBoxLayout()
         self.time_label = QLabel("Time: --")
         self.tokens_label = QLabel("Tokens: --")
@@ -188,13 +209,29 @@ class ModelPanel(QWidget):
 
     def get_model_config(self):
         from ..core.experiment import ModelConfig
+        stop_text = self.stop_sequences_edit.text().strip()
+        stop_sequences = [s.strip() for s in stop_text.split(",") if s.strip()]
         return ModelConfig(
             name=self.model_combo.currentText(),
             custom_endpoint=self.endpoint_edit.text(),
             temperature=self.temp_spin.value(),
             top_p=self.top_p_spin.value(),
             top_k=self.top_k_spin.value(),
+            prompt_modifier=self.prompt_modifier_edit.toPlainText(),
+            stop_sequences=stop_sequences,
         )
+
+    def get_prompt_modifier(self) -> str:
+        return self.prompt_modifier_edit.toPlainText().strip()
+
+    def set_prompt_modifier(self, text: str):
+        self.prompt_modifier_edit.setPlainText(text)
+
+    def get_stop_sequences(self) -> str:
+        return self.stop_sequences_edit.text().strip()
+
+    def set_stop_sequences(self, text: str):
+        self.stop_sequences_edit.setText(text)
 
     def _toggle_reasoning(self):
         is_expanded = self.reasoning_toggle.isChecked()

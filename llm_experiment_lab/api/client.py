@@ -41,6 +41,7 @@ class LLMAPIClient:
         top_p: float = 1.0,
         top_k: int = -1,
         custom_endpoint: str = "",
+        stop: Optional[List[str]] = None,
     ) -> ModelResponse:
         endpoint = custom_endpoint if custom_endpoint else f"{self.base_url}/chat/completions"
 
@@ -58,6 +59,9 @@ class LLMAPIClient:
 
         if top_k > 0:
             request_data["top_k"] = top_k
+
+        if stop:
+            request_data["stop"] = stop
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

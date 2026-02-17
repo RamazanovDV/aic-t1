@@ -100,6 +100,8 @@ class MainWindow(QMainWindow):
                     "temperature": config.temperature,
                     "top_p": config.top_p,
                     "top_k": config.top_k,
+                    "prompt_modifier": config.prompt_modifier,
+                    "stop_sequences": config.stop_sequences,
                 })
             self.settings["models"] = model_configs
             
@@ -165,6 +167,9 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
+        self.prompts_area = PromptsArea()
+        splitter.addWidget(self.prompts_area)
+
         models_layout = QHBoxLayout()
         models_widget = QWidget()
         self.model_panels = [
@@ -205,9 +210,6 @@ class MainWindow(QMainWindow):
         control_widget.setFixedHeight(50)
         splitter.addWidget(control_widget)
 
-        self.prompts_area = PromptsArea()
-        splitter.addWidget(self.prompts_area)
-
         self.eval_area = EvalArea()
         self.eval_area.evaluate_clicked.connect(self._run_evaluation)
         self.eval_area.set_evaluate_enabled(False)
@@ -219,7 +221,7 @@ class MainWindow(QMainWindow):
         self.log_widget.setMinimumHeight(0)
         splitter.addWidget(self.log_widget)
 
-        splitter.setSizes([300, 50, 150, 200, 0])
+        splitter.setSizes([150, 300, 50, 200, 0])
 
         layout.addWidget(splitter)
         
@@ -242,6 +244,10 @@ class MainWindow(QMainWindow):
                 panel.temp_spin.setValue(model_data.get("temperature", 0.7))
                 panel.top_p_spin.setValue(model_data.get("top_p", 1.0))
                 panel.top_k_spin.setValue(model_data.get("top_k", -1))
+                panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
+                stop_sequences = model_data.get("stop_sequences", [])
+                if stop_sequences:
+                    panel.set_stop_sequences(", ".join(stop_sequences))
 
         api_cfg = self.settings.get("api", {})
         base_url = api_cfg.get("base_url", "")
