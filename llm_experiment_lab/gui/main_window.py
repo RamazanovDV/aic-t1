@@ -303,7 +303,10 @@ class MainWindow(QMainWindow):
                 elif op_type == "set_statusbar":
                     self.status_bar.showMessage(op.get("message"))
                 elif op_type == "eval_result":
-                    self.eval_area.set_eval_result(op.get("result", ""))
+                    self.eval_area.set_eval_result(
+                        op.get("result", ""),
+                        op.get("reasoning")
+                    )
                 elif op_type == "model_complete":
                     idx = op.get("index")
                     stat = op.get("stat")
@@ -878,13 +881,24 @@ class MainWindow(QMainWindow):
                         "request": raw.raw_request,
                         "response": raw.raw_response,
                     })
+                    reasoning = getattr(raw, 'reasoning', None)
+                else:
+                    reasoning = None
 
-                self.ui_queue.put({"type": "eval_result", "result": result})
+                self.ui_queue.put({
+                    "type": "eval_result",
+                    "result": result,
+                    "reasoning": reasoning
+                })
                 self.ui_queue.put({"type": "set_statusbar", "message": "Evaluation completed"})
                 self._log("Evaluation completed")
             except Exception as e:
                 import traceback
-                self.ui_queue.put({"type": "eval_result", "result": f"Error: {str(e)}"})
+                self.ui_queue.put({
+                    "type": "eval_result",
+                    "result": f"Error: {str(e)}",
+                    "reasoning": None
+                })
                 self.ui_queue.put({"type": "set_statusbar", "message": "Evaluation failed"})
                 self._log(f"Evaluation error: {str(e)}")
                 self._log(traceback.format_exc())

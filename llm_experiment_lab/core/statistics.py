@@ -11,6 +11,7 @@ class ModelStats:
     completion_tokens: int
     total_tokens: int
     content: str = ""
+    reasoning: Optional[str] = None
     raw_request: Dict[str, Any] = field(default_factory=dict)
     raw_response: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)

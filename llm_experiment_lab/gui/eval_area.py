@@ -1,8 +1,16 @@
+import json
+
+import markdown
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name, TextLexer
+from pygments.formatters import HtmlFormatter
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QDoubleSpinBox, QTextEdit,
     QGroupBox, QPushButton,
 )
+from typing import Optional
 from PyQt6.QtCore import pyqtSignal
 
 
@@ -62,6 +70,20 @@ class EvalArea(QWidget):
         self.eval_result_edit.setMinimumHeight(120)
         group_layout.addWidget(self.eval_result_edit)
 
+        self.reasoning_toggle = QPushButton("▼ Reasoning")
+        self.reasoning_toggle.setCheckable(True)
+        self.reasoning_toggle.setChecked(False)
+        self.reasoning_toggle.clicked.connect(self._toggle_reasoning)
+        self.reasoning_toggle.setVisible(False)
+        group_layout.addWidget(self.reasoning_toggle)
+
+        self.reasoning_edit = QTextEdit()
+        self.reasoning_edit.setPlaceholderText("Model reasoning/thinking will appear here...")
+        self.reasoning_edit.setReadOnly(True)
+        self.reasoning_edit.setMaximumHeight(0)
+        self.reasoning_edit.setVisible(False)
+        group_layout.addWidget(self.reasoning_edit)
+
         group.setLayout(group_layout)
         layout.addWidget(group)
 
@@ -78,14 +100,103 @@ class EvalArea(QWidget):
         else:
             self.eval_model_combo.setCurrentText(model_name)
 
-    def set_eval_result(self, text: str):
-        self.eval_result_edit.setPlainText(text)
+    def set_eval_result(self, text: str, reasoning: Optional[str] = None):
+        self.eval_result_edit.setHtml(self._render_markdown(text))
+        if reasoning:
+            self.reasoning_edit.setPlainText(reasoning)
+            self.reasoning_toggle.setVisible(True)
+        else:
+            self.reasoning_toggle.setVisible(False)
+            self.reasoning_edit.setVisible(False)
+            self.reasoning_toggle.setChecked(False)
+            self.reasoning_edit.setMaximumHeight(0)
 
     def clear_eval_result(self):
         self.eval_result_edit.clear()
+        self.reasoning_edit.clear()
+        self.reasoning_toggle.setVisible(False)
+        self.reasoning_edit.setVisible(False)
+        self.reasoning_toggle.setChecked(False)
+        self.reasoning_edit.setMaximumHeight(0)
         self.show_json_btn.setEnabled(False)
         self.eval_request_json = None
         self.eval_response_json = None
+
+    def _toggle_reasoning(self):
+        is_expanded = self.reasoning_toggle.isChecked()
+        if is_expanded:
+            self.reasoning_toggle.setText("▲ Reasoning")
+            self.reasoning_edit.setMaximumHeight(200)
+            self.reasoning_edit.setVisible(True)
+        else:
+            self.reasoning_toggle.setText("▼ Reasoning")
+            self.reasoning_edit.setMaximumHeight(0)
+            self.reasoning_edit.setVisible(False)
+
+    def _render_markdown(self, text: str) -> str:
+        if not text:
+            return ""
+        
+        md = markdown.Markdown(extensions=['extra', 'codehilite'])
+        
+        def code_block_replace(match):
+            code = match.group(1)
+            lang = match.group(2) or ''
+            try:
+                if lang:
+                    lexer = get_lexer_by_name(lang)
+                else:
+                    lexer = TextLexer()
+            except Exception:
+                lexer = TextLexer()
+            formatter = HtmlFormatter(nowrap=True)
+            highlighted = highlight(code, lexer, formatter)
+            return f'<pre><code class="language-{lang}">{highlighted}</code></pre>'
+        
+        import re
+        text = re.sub(r'```(\w*)\n(.*?)```', code_block_replace, text, flags=re.DOTALL)
+        
+        html = md.convert(text)
+        
+        style = """
+        <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #e0e0e0;
+            background-color: #2b2b2b;
+            padding: 10px;
+        }
+        pre {
+            background-color: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #ffffff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        blockquote {
+            border-left: 4px solid #666;
+            margin-left: 0;
+            padding-left: 15px;
+            color: #aaa;
+        }
+        a { color: #6cb6ff; }
+        table { border-collapse: collapse; }
+        th, td { border: 1px solid #444; padding: 8px; }
+        </style>
+        """
+        
+        return f"<html><head>{style}</head><body>{html}</body></html>"
 
     def set_evaluate_enabled(self, enabled: bool):
         self.evaluate_btn.setEnabled(enabled)

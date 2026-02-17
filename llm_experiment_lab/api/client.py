@@ -16,6 +16,7 @@ class ModelResponse:
     response_time: float
     raw_request: dict
     raw_response: dict
+    reasoning: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -82,6 +83,7 @@ class LLMAPIClient:
                         response_time=time.time() - start_time,
                         raw_request=request_data,
                         raw_response={},
+                        reasoning=None,
                         error="Cancelled",
                     )
                 
@@ -90,8 +92,11 @@ class LLMAPIClient:
 
             response_time = time.time() - start_time
 
-            content = response_json["choices"][0]["message"]["content"]
+            message = response_json["choices"][0]["message"]
+            content = message.get("content", "")
             usage = response_json.get("usage", {})
+
+            reasoning = message.get("reasoning_content") or message.get("thinking")
 
             return ModelResponse(
                 content=content,
@@ -101,6 +106,7 @@ class LLMAPIClient:
                 response_time=response_time,
                 raw_request=request_data,
                 raw_response=response_json,
+                reasoning=reasoning,
             )
 
         except httpx.HTTPStatusError as e:
@@ -119,6 +125,7 @@ class LLMAPIClient:
                 response_time=response_time,
                 raw_request=request_data,
                 raw_response={},
+                reasoning=None,
                 error=error_msg,
             )
 
@@ -132,6 +139,7 @@ class LLMAPIClient:
                 response_time=response_time,
                 raw_request=request_data,
                 raw_response={},
+                reasoning=None,
                 error="Cancelled",
             )
 
@@ -145,6 +153,7 @@ class LLMAPIClient:
                 response_time=response_time,
                 raw_request=request_data,
                 raw_response={},
+                reasoning=None,
                 error=str(e),
             )
 
