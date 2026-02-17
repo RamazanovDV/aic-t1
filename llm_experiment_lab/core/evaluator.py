@@ -17,7 +17,6 @@ class Evaluator:
         user_prompt: str,
         responses: List[dict],
         temperature: float = 0.3,
-        custom_endpoint: str = "",
         eval_system_prompt: str = "",
     ) -> tuple[str, ModelResponse]:
         eval_prompt = self._build_eval_prompt(
@@ -33,7 +32,6 @@ class Evaluator:
             temperature=temperature,
             top_p=1.0,
             top_k=-1,
-            custom_endpoint=custom_endpoint,
         )
 
         return result.content if not result.error else f"Error: {result.error}", result

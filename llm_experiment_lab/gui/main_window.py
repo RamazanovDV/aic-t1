@@ -115,12 +115,11 @@ class MainWindow(QMainWindow):
                 if current_items and current_items[0]:
                     model_lists[endpoint] = current_items
             
-            eval_endpoint = self.eval_area.eval_endpoint.text() or base_url
-            if eval_endpoint not in model_lists:
-                model_lists[eval_endpoint] = []
+            if base_url not in model_lists:
+                model_lists[base_url] = []
             eval_items = [self.eval_area.eval_model_combo.itemText(i) for i in range(self.eval_area.eval_model_combo.count())]
             if eval_items and eval_items[0]:
-                model_lists[eval_endpoint] = eval_items
+                model_lists[base_url] = eval_items
             
             self.settings["model_lists"] = model_lists
             
@@ -131,8 +130,6 @@ class MainWindow(QMainWindow):
             
             self.settings["eval_model"] = {
                 "name": self.eval_area.eval_model_combo.currentText(),
-                "custom_endpoint": self.eval_area.eval_endpoint.text(),
-                "temperature": self.eval_area.eval_temp_spin.value(),
             }
             
             with open(CONFIG_FILE, "w") as f:
@@ -243,12 +240,11 @@ class MainWindow(QMainWindow):
             if endpoint in model_lists and model_lists[endpoint]:
                 panel.set_model_list(model_lists[endpoint])
         
-        eval_endpoint = self.eval_area.eval_endpoint.text() or base_url
-        if eval_endpoint in model_lists and model_lists[eval_endpoint]:
+        if base_url in model_lists and model_lists[base_url]:
             current = self.eval_area.eval_model_combo.currentText()
             self.eval_area.eval_model_combo.clear()
-            self.eval_area.eval_model_combo.addItems(model_lists[eval_endpoint])
-            if current in model_lists[eval_endpoint]:
+            self.eval_area.eval_model_combo.addItems(model_lists[base_url])
+            if current in model_lists[base_url]:
                 self.eval_area.eval_model_combo.setCurrentText(current)
 
         saved_prompts = self.settings.get("prompts", {})
@@ -260,7 +256,6 @@ class MainWindow(QMainWindow):
         if saved_eval:
             self.eval_area.set_eval_model(saved_eval.get("name", "gpt-4"))
             self.eval_area.eval_temp_spin.setValue(saved_eval.get("temperature", 0.3))
-            self.eval_area.eval_endpoint.setText(saved_eval.get("custom_endpoint", ""))
 
     def _log(self, message: str):
         self.log_queue.put(message)
@@ -364,10 +359,6 @@ class MainWindow(QMainWindow):
             if endpoint:
                 endpoints.add(endpoint)
 
-        eval_endpoint = self.eval_area.eval_endpoint.text()
-        if eval_endpoint:
-            endpoints.add(eval_endpoint)
-
         self._log(f"Refreshing models for {len(endpoints)} endpoints: {endpoints}")
 
         for endpoint in endpoints:
@@ -428,11 +419,7 @@ class MainWindow(QMainWindow):
                 panel.set_model_list(models)
                 updated = True
         
-        eval_endpoint = self.eval_area.eval_endpoint.text()
-        should_update_eval = (
-            (endpoint and eval_endpoint == endpoint) or
-            (is_default_endpoint and not eval_endpoint)
-        )
+        should_update_eval = is_default_endpoint
         if should_update_eval:
             current = self.eval_area.eval_model_combo.currentText()
             self.eval_area.eval_model_combo.clear()
@@ -817,8 +804,6 @@ class MainWindow(QMainWindow):
 
             eval_cfg = self.settings.get("eval_model", {})
             self.eval_area.set_eval_model(eval_cfg.get("name", "gpt-4"))
-            self.eval_area.eval_temp_spin.setValue(eval_cfg.get("temperature", 0.3))
-            self.eval_area.eval_endpoint.setText(eval_cfg.get("custom_endpoint", ""))
 
     def _run_evaluation(self):
         if not self.model_responses:
@@ -881,7 +866,6 @@ class MainWindow(QMainWindow):
                         user_prompt=user_prompt,
                         responses=responses,
                         temperature=eval_config.get("temperature", 0.3),
-                        custom_endpoint=eval_config.get("custom_endpoint", ""),
                         eval_system_prompt=eval_system_prompt,
                     )
                 )

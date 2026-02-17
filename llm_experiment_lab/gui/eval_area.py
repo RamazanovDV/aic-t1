@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QDoubleSpinBox, QTextEdit,
-    QGroupBox, QPushButton, QLineEdit,
+    QGroupBox, QPushButton,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -33,13 +33,6 @@ class EvalArea(QWidget):
         self.eval_model_combo.setEditable(True)
         model_layout.addWidget(self.eval_model_combo)
         settings_layout.addLayout(model_layout)
-
-        endpoint_layout = QVBoxLayout()
-        endpoint_layout.addWidget(QLabel("Custom Endpoint:"))
-        self.eval_endpoint = QLineEdit()
-        self.eval_endpoint.setPlaceholderText("Optional...")
-        endpoint_layout.addWidget(self.eval_endpoint)
-        settings_layout.addLayout(endpoint_layout)
 
         temp_layout = QVBoxLayout()
         temp_layout.addWidget(QLabel("Temperature:"))
@@ -75,7 +68,6 @@ class EvalArea(QWidget):
     def get_eval_config(self):
         return {
             "model": self.eval_model_combo.currentText(),
-            "custom_endpoint": self.eval_endpoint.text(),
             "temperature": self.eval_temp_spin.value(),
         }
 
