@@ -435,6 +435,13 @@ class LLMAPIClient:
         if self._cancel_event is not None:
             self._cancel_event.set()
 
+    def cancel(self):
+        self.cancel_request()
+
+    def reset_cancel(self):
+        if self._cancel_event is not None:
+            self._cancel_event.clear()
+
     def list_models(self) -> tuple[List[str], Optional[str]]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",

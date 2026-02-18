@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
 
         self.eval_area = EvalArea()
         self.eval_area.evaluate_clicked.connect(self._run_evaluation)
+        self.eval_area.stop_evaluate_clicked.connect(self._stop_evaluation)
         self.eval_area.set_evaluate_enabled(False)
         splitter.addWidget(self.eval_area)
 
@@ -1062,6 +1063,7 @@ class MainWindow(QMainWindow):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
+                self.eval_area.set_running(True)
                 self._log("Sending evaluation request...")
                 eval_system_prompt = self.settings.get("eval_model", {}).get("system_prompt", "")
 
@@ -1117,12 +1119,18 @@ class MainWindow(QMainWindow):
                 self._log(f"Evaluation error: {str(e)}")
                 self._log(traceback.format_exc())
             finally:
+                self.eval_area.set_running(False)
                 self.ui_queue.put({"type": "enable_eval", "enabled": True})
                 self._set_all_run_buttons_enabled(True)
                 loop.close()
 
         thread = threading.Thread(target=run_eval)
         thread.start()
+
+    def _stop_evaluation(self):
+        self._log("Stopping evaluation...")
+        self.evaluator.cancel()
+        self.eval_area.set_running(False)
 
     def _save_experiment(self):
         from ..core.experiment_storage import save_experiment

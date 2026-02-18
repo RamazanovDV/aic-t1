@@ -14,6 +14,7 @@ from PyQt6.QtCore import pyqtSignal
 
 class EvalArea(QWidget):
     evaluate_clicked = pyqtSignal()
+    stop_evaluate_clicked = pyqtSignal()
 
     DEFAULT_EVAL_MODELS = []
 
@@ -21,6 +22,7 @@ class EvalArea(QWidget):
         super().__init__(parent)
         self.eval_request_json = None
         self.eval_response_json = None
+        self._is_running = False
         self._init_ui()
 
     def _init_ui(self):
@@ -48,8 +50,11 @@ class EvalArea(QWidget):
         settings_layout.addWidget(self.eval_temp_spin)
 
         self.evaluate_btn = QPushButton("Run Evaluation")
-        self.evaluate_btn.clicked.connect(self.evaluate_clicked.emit)
+        self.evaluate_btn.clicked.connect(self._on_evaluate_btn_clicked)
         settings_layout.addWidget(self.evaluate_btn)
+
+        self.eval_status_label = QLabel("")
+        settings_layout.addWidget(self.eval_status_label)
 
         self.show_json_btn = QPushButton("Show JSON")
         self.show_json_btn.setEnabled(False)
@@ -82,6 +87,21 @@ class EvalArea(QWidget):
 
         group.setLayout(group_layout)
         layout.addWidget(group)
+
+    def _on_evaluate_btn_clicked(self):
+        if self._is_running:
+            self.stop_evaluate_clicked.emit()
+        else:
+            self.evaluate_clicked.emit()
+
+    def set_running(self, running: bool):
+        self._is_running = running
+        if running:
+            self.evaluate_btn.setText("Stop Evaluation")
+            self.eval_status_label.setText("Running...")
+        else:
+            self.evaluate_btn.setText("Run Evaluation")
+            self.eval_status_label.setText("")
 
     def get_eval_config(self):
         return {

@@ -10,6 +10,12 @@ class Evaluator:
     def __init__(self, client: LLMAPIClient):
         self.client = client
 
+    def cancel(self):
+        self.client.cancel()
+
+    def reset_cancel(self):
+        self.client.reset_cancel()
+
     async def evaluate(
         self,
         eval_model: str,
@@ -52,6 +58,8 @@ class Evaluator:
 
         final_system_prompt = eval_system_prompt if eval_system_prompt else self.DEFAULT_SYSTEM_PROMPT
 
+        self.reset_cancel()
+        
         result = await self.client.chat_completion_stream(
             model=eval_model,
             system_prompt=final_system_prompt,
