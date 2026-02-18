@@ -326,11 +326,11 @@ class MainWindow(QMainWindow):
                             req_json = stats.raw_request
                             res_json = stats.raw_response
                             if req_json or res_json:
-                                panel.set_json(req_json, res_json)
+                                panel.set_json(req_json, res_json, content if isinstance(content, str) else "")
                         elif i in self.model_json:
                             req_json = self.model_json[i].get("request", {})
                             res_json = self.model_json[i].get("response", {})
-                            panel.set_json(req_json, res_json)
+                            panel.set_json(req_json, res_json, content if isinstance(content, str) else "")
                 
                 self.current_experiment_id = exp_data.id
                 self.current_experiment_name = exp_data.name
@@ -440,7 +440,7 @@ class MainWindow(QMainWindow):
                     panel.set_response(content, stats)
                     panel.finalize_response()
                     if op.get("req_json") and op.get("res_json"):
-                        panel.set_json(op.get("req_json"), op.get("res_json"))
+                        panel.set_json(op.get("req_json"), op.get("res_json"), content if content else "")
                 elif op_type == "stream_chunk":
                     panel = op.get("panel")
                     content = op.get("content")
@@ -1229,11 +1229,11 @@ class MainWindow(QMainWindow):
                             req_json = stats.raw_request
                             res_json = stats.raw_response
                             if req_json or res_json:
-                                panel.set_json(req_json, res_json)
+                                panel.set_json(req_json, res_json, content if isinstance(content, str) else "")
                         elif i in self.model_json:
                             req_json = self.model_json[i].get("request", {})
                             res_json = self.model_json[i].get("response", {})
-                            panel.set_json(req_json, res_json)
+                            panel.set_json(req_json, res_json, content if isinstance(content, str) else "")
                 
                 self.eval_area.clear_eval_result()
                 

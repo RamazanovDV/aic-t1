@@ -215,6 +215,8 @@ class ModelPanel(QWidget):
         group.setLayout(group_layout)
         layout.addWidget(group)
 
+        self._last_content = ""
+
     def _on_run_btn_clicked(self):
         if self._is_running:
             self.stop_clicked.emit()
@@ -358,9 +360,10 @@ class ModelPanel(QWidget):
         cursor.insertText(new_reasoning)
         self.reasoning_edit.setTextCursor(cursor)
 
-    def set_json(self, request_json: dict, response_json: dict):
+    def set_json(self, request_json: dict, response_json: dict, content: str = ""):
         self.request_json = request_json
         self.response_json = response_json
+        self._last_content = content
         self.json_btn.setEnabled(True)
 
     def _show_json_dialog(self):
@@ -381,9 +384,13 @@ class ModelPanel(QWidget):
         layout.addWidget(request_edit)
         
         response_edit = QTextEdit()
-        response_text = json.dumps(self.response_json, indent=2, ensure_ascii=False)
+        response_text = ""
         if self.response_json.get("streaming") == True:
-            response_text = "(Streaming response - full response not available)"
+            response_text = "(Streaming response - showing accumulated content)"
+            if hasattr(self, '_last_content'):
+                response_text = self._last_content
+        else:
+            response_text = json.dumps(self.response_json, indent=2, ensure_ascii=False)
         response_edit.setPlainText(response_text)
         response_edit.setReadOnly(True)
         layout.addWidget(response_edit)
