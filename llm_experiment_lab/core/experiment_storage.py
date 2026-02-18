@@ -25,6 +25,7 @@ class ExperimentData:
     results: Dict[str, Any] = field(default_factory=dict)
     model_responses: Dict[Any, Any] = field(default_factory=dict)
     model_stats: Dict[Any, Any] = field(default_factory=dict)
+    eval_result: str = ""
     notes: str = ""
 
     def to_dict(self) -> dict:
@@ -125,6 +126,7 @@ def save_experiment(
     results: Dict[str, Any],
     model_responses: Dict[str, Any],
     model_stats: Dict[str, Any],
+    eval_result: str = "",
     notes: str = "",
     existing_id: str = "",
     existing_timestamp: str = "",
@@ -156,6 +158,7 @@ def save_experiment(
         results=results,
         model_responses=_serialize_responses(model_responses),
         model_stats=_serialize_stats(model_stats),
+        eval_result=eval_result,
     )
 
     with open(exp_dir / "experiment.json", "w", encoding="utf-8") as f:

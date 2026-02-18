@@ -338,6 +338,9 @@ class MainWindow(QMainWindow):
                 self.current_notes = exp_data.notes or ""
                 self._update_window_title()
                 
+                if exp_data.eval_result:
+                    self.eval_area.set_eval_result(exp_data.eval_result)
+                
                 self._log(f"Last experiment loaded: {exp_data.name}")
                 self.status_bar.showMessage(f"Last experiment loaded: {exp_data.name}")
 
@@ -1181,6 +1184,7 @@ class MainWindow(QMainWindow):
                 results=results,
                 model_responses=self.model_responses,
                 model_stats=self.model_stats,
+                eval_result=self.eval_area.get_eval_result(),
                 notes=self.current_notes,
                 existing_id=existing_id,
                 existing_timestamp=existing_timestamp,
@@ -1262,6 +1266,9 @@ class MainWindow(QMainWindow):
                             panel.set_json(req_json, res_json, content if isinstance(content, str) else "")
                 
                 self.eval_area.clear_eval_result()
+                
+                if exp_data.eval_result:
+                    self.eval_area.set_eval_result(exp_data.eval_result)
                 
                 self._log(f"Experiment loaded: {exp_data.name}")
                 self.status_bar.showMessage(f"Experiment loaded: {exp_data.name}")
