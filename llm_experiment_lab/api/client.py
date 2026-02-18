@@ -30,7 +30,7 @@ class LLMAPIClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
-        self._cancel_event: Optional[asyncio.Event] = None
+        self._cancel_event: asyncio.Event = asyncio.Event()
 
     async def chat_completion(
         self,
@@ -106,9 +106,6 @@ class LLMAPIClient:
         print(f"  User prompt length: {len(user_prompt)}")
 
         start_time = time.time()
-
-        if self._cancel_event is None:
-            self._cancel_event = asyncio.Event()
 
         try:
             async with httpx.AsyncClient(verify=self.verify_ssl, timeout=120.0, follow_redirects=True) as client:
@@ -266,9 +263,6 @@ class LLMAPIClient:
         }
 
         start_time = time.time()
-
-        if self._cancel_event is None:
-            self._cancel_event = asyncio.Event()
 
         accumulated_content = []
         accumulated_reasoning = []
@@ -432,15 +426,13 @@ class LLMAPIClient:
             )
 
     def cancel_request(self):
-        if self._cancel_event is not None:
-            self._cancel_event.set()
+        self._cancel_event.set()
 
     def cancel(self):
         self.cancel_request()
 
     def reset_cancel(self):
-        if self._cancel_event is not None:
-            self._cancel_event.clear()
+        self._cancel_event.clear()
 
     def list_models(self) -> tuple[List[str], Optional[str]]:
         headers = {

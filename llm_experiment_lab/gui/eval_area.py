@@ -156,7 +156,7 @@ class EvalArea(QWidget):
             self.reasoning_edit.setMaximumHeight(0)
 
     def get_eval_result(self) -> str:
-        return self.eval_result_edit.toPlainText()
+        return self.eval_result_edit.toHtml()
 
     def clear_eval_result(self):
         self.eval_result_edit.clear()
