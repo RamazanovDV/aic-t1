@@ -146,7 +146,8 @@ class EvalArea(QWidget):
             self.eval_model_combo.setCurrentText(model_name)
 
     def set_eval_result(self, text: str, reasoning: Optional[str] = None):
-        self.eval_result_edit.setMarkdown(text)
+        html = self._render_markdown(text)
+        self.eval_result_edit.setHtml(html)
         if reasoning:
             self.reasoning_edit.setPlainText(reasoning)
             self.reasoning_toggle.setVisible(True)
