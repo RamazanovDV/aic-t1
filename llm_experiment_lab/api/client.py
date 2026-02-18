@@ -299,6 +299,8 @@ class LLMAPIClient:
                     response.raise_for_status()
                     
                     cancelled = False
+                    total_completion_tokens = 0
+                    prompt_tokens_from_stream = 0
                     async for line in response.aiter_lines():
                         if self._cancel_event.is_set():
                             cancelled = True
@@ -332,15 +334,16 @@ class LLMAPIClient:
                         
                         if "usage" in data:
                             total_completion_tokens = data["usage"].get("completion_tokens", 0)
+                            prompt_tokens_from_stream = data["usage"].get("prompt_tokens", 0)
                     
                     if cancelled:
                         await response.aclose()
                         response_time = time.time() - start_time
                         return ModelResponse(
                             content="".join(accumulated_content),
-                            prompt_tokens=0,
-                            completion_tokens=len("".join(accumulated_content)),
-                            total_tokens=len("".join(accumulated_content)),
+                            prompt_tokens=prompt_tokens_from_stream,
+                            completion_tokens=total_completion_tokens,
+                            total_tokens=prompt_tokens_from_stream + total_completion_tokens,
                             response_time=response_time,
                             raw_request=request_data,
                             raw_response={},
@@ -352,9 +355,9 @@ class LLMAPIClient:
 
             return ModelResponse(
                 content="".join(accumulated_content),
-                prompt_tokens=0,
+                prompt_tokens=prompt_tokens_from_stream,
                 completion_tokens=total_completion_tokens,
-                total_tokens=total_completion_tokens,
+                total_tokens=prompt_tokens_from_stream + total_completion_tokens,
                 response_time=response_time,
                 raw_request=request_data,
                 raw_response={"streaming": True},

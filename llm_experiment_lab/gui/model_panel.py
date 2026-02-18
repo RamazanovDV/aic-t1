@@ -381,7 +381,10 @@ class ModelPanel(QWidget):
         layout.addWidget(request_edit)
         
         response_edit = QTextEdit()
-        response_edit.setPlainText(json.dumps(self.response_json, indent=2, ensure_ascii=False))
+        response_text = json.dumps(self.response_json, indent=2, ensure_ascii=False)
+        if self.response_json.get("streaming") == True:
+            response_text = "(Streaming response - full response not available)"
+        response_edit.setPlainText(response_text)
         response_edit.setReadOnly(True)
         layout.addWidget(response_edit)
         
