@@ -15,13 +15,12 @@ from ..api.client import LLMAPIClient
 from ..core.experiment import Experiment
 from ..core.evaluator import Evaluator
 from ..core.statistics import Statistics
+from ..config import load_config, save_config, CONFIG_FILE
 from .model_panel import ModelPanel
 from .prompts_area import PromptsArea
 from .eval_area import EvalArea
 from .settings_dialog import SettingsDialog
-
-
-CONFIG_FILE = "config.json"
+from .experiment_dialog import SaveExperimentDialog, LoadExperimentDialog, NotesEditorDialog
 
 
 class Worker(QObject):
@@ -34,7 +33,8 @@ class Worker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LLM Experiment Lab")
+        self._base_title = "LLM Experiment Lab"
+        self.setWindowTitle(self._base_title)
         self.setMinimumSize(1200, 800)
 
         self.settings = {}
@@ -47,6 +47,10 @@ class MainWindow(QMainWindow):
         self.model_stats = {}
         self.model_json = {}
 
+        self.current_experiment_id = None
+        self.current_experiment_name = ""
+        self.current_notes = ""
+
         self.log_queue = queue.Queue()
         self.ui_queue = queue.Queue()
         
@@ -57,14 +61,7 @@ class MainWindow(QMainWindow):
         self._start_ui_timer()
 
     def _load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r") as f:
-                    self.settings = json.load(f)
-            except Exception:
-                self.settings = self._default_settings()
-        else:
-            self.settings = self._default_settings()
+        self.settings = load_config()
 
     def _default_settings(self):
         return {
@@ -149,8 +146,14 @@ class MainWindow(QMainWindow):
                 "main_splitter_sizes": self.main_splitter.sizes() if hasattr(self, 'main_splitter') else [],
             }
             
+            if self.current_experiment_id:
+                self.settings["last_experiment_id"] = self.current_experiment_id
+            else:
+                self.settings.pop("last_experiment_id", None)
+            
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.settings, f, indent=2)
+            save_config(self.settings)
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Could not save config: {e}")
 
@@ -163,6 +166,12 @@ class MainWindow(QMainWindow):
         )
         self.experiment = Experiment(self.client)
         self.evaluator = Evaluator(self.client)
+
+    def _update_window_title(self):
+        if self.current_experiment_name:
+            self.setWindowTitle(f"{self._base_title} - {self.current_experiment_name}")
+        else:
+            self.setWindowTitle(self._base_title)
 
     def _init_ui(self):
         central = QWidget()
@@ -210,6 +219,24 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._show_settings)
         control_layout.addWidget(self.settings_btn)
 
+        control_layout.addStretch()
+
+        self.save_exp_btn = QPushButton("Save Experiment")
+        self.save_exp_btn.clicked.connect(self._save_experiment)
+        control_layout.addWidget(self.save_exp_btn)
+
+        self.load_exp_btn = QPushButton("Load Experiment")
+        self.load_exp_btn.clicked.connect(self._load_experiment)
+        control_layout.addWidget(self.load_exp_btn)
+
+        self.notes_btn = QPushButton("Edit Notes")
+        self.notes_btn.clicked.connect(self._edit_notes)
+        control_layout.addWidget(self.notes_btn)
+
+        self.clear_exp_btn = QPushButton("Clear Experiment")
+        self.clear_exp_btn.clicked.connect(self._clear_experiment)
+        control_layout.addWidget(self.clear_exp_btn)
+
         control_widget = QWidget()
         control_widget.setLayout(control_layout)
         control_widget.setFixedHeight(50)
@@ -238,6 +265,57 @@ class MainWindow(QMainWindow):
 
         self._load_saved_models()
         self._restore_window_state()
+        self._load_last_experiment()
+
+    def _load_last_experiment(self):
+        last_exp_id = self.settings.get("last_experiment_id")
+        if last_exp_id:
+            from ..core.experiment_storage import get_experiment_by_id
+            exp_data = get_experiment_by_id(last_exp_id)
+            if exp_data:
+                self.prompts_area.set_system_prompt(exp_data.prompts.get("system", ""))
+                self.prompts_area.set_user_prompt(exp_data.prompts.get("user", ""))
+                
+                api_cfg = self.settings.get("api", {})
+                base_url = api_cfg.get("base_url", "")
+                model_lists = self.settings.get("model_lists", {})
+                
+                saved_models = exp_data.models
+                for i, panel in enumerate(self.model_panels):
+                    settings = panel.get_custom_settings()
+                    endpoint = settings.get("custom_endpoint") or base_url
+                    if endpoint in model_lists and model_lists[endpoint]:
+                        panel.set_model_list(model_lists[endpoint])
+                    
+                    if i < len(saved_models):
+                        model_data = saved_models[i]
+                        panel.set_model(model_data.get("name", ""))
+                        panel.temp_spin.setValue(model_data.get("temperature", 0.7))
+                        panel.top_p_spin.setValue(model_data.get("top_p", 1.0))
+                        panel.top_k_spin.setValue(model_data.get("top_k", -1))
+                        panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
+                        panel.set_custom_settings({
+                            "custom_endpoint": model_data.get("custom_endpoint", ""),
+                            "custom_api_token": model_data.get("custom_api_token", ""),
+                            "max_tokens": model_data.get("max_tokens", 0),
+                            "stop_sequences": model_data.get("stop_sequences", []),
+                            "frequency_penalty": model_data.get("frequency_penalty", 0.0),
+                            "presence_penalty": model_data.get("presence_penalty", 0.0),
+                        })
+                
+                self.settings["execution"] = exp_data.execution
+                self.settings["eval_model"] = exp_data.eval_model
+                
+                self.model_responses = exp_data.model_responses or {}
+                self.model_stats = exp_data.model_stats or {}
+                
+                self.current_experiment_id = exp_data.id
+                self.current_experiment_name = exp_data.name
+                self.current_notes = exp_data.notes or ""
+                self._update_window_title()
+                
+                self._log(f"Last experiment loaded: {exp_data.name}")
+                self.status_bar.showMessage(f"Last experiment loaded: {exp_data.name}")
 
     def _load_saved_models(self):
         saved_models = self.settings.get("models", [])
@@ -337,8 +415,19 @@ class MainWindow(QMainWindow):
                     content = op.get("content")
                     stats = op.get("stats")
                     panel.set_response(content, stats)
+                    panel.finalize_response()
                     if op.get("req_json") and op.get("res_json"):
                         panel.set_json(op.get("req_json"), op.get("res_json"))
+                elif op_type == "stream_chunk":
+                    panel = op.get("panel")
+                    content = op.get("content")
+                    reasoning = op.get("reasoning", "")
+                    panel.append_response(content)
+                    if reasoning:
+                        panel.append_reasoning(reasoning)
+                elif op_type == "init_response":
+                    panel = op.get("panel")
+                    panel.init_response()
                 elif op_type == "enable_run":
                     self.run_btn.setEnabled(op.get("enabled", True))
                 elif op_type == "enable_stop":
@@ -520,7 +609,7 @@ class MainWindow(QMainWindow):
         panel.set_running(True)
         self._log(f"Starting single model run: {config.name}...")
 
-        self._set_all_run_buttons_enabled(False)
+        self._set_all_run_buttons_enabled(False, disable_panels=False)
         self.eval_area.set_evaluate_enabled(False)
         self.stop_btn.setEnabled(True)
         self._log(f"Stop button enabled: {self.stop_btn.isEnabled()}")
@@ -562,7 +651,7 @@ class MainWindow(QMainWindow):
                         user_prompt,
                         config,
                         index,
-                        lambda idx, status, model_nm: self._progress_callback(idx, status, config.name),
+                        self._progress_callback,
                         on_complete
                     )
                 )
@@ -642,12 +731,13 @@ class MainWindow(QMainWindow):
         self.log_widget.clear()
         self._log("Starting experiment...")
 
-        self._set_all_run_buttons_enabled(False)
-        self.stop_btn.setEnabled(True)
-        self.eval_area.set_evaluate_enabled(False)
-
         exec_mode = self.settings.get("execution", {}).get("mode", "parallel")
         self._log(f"Execution mode: {exec_mode}")
+
+        disable_panels = (exec_mode == "sequential")
+        self._set_all_run_buttons_enabled(False, disable_panels=disable_panels)
+        self.stop_btn.setEnabled(True)
+        self.eval_area.set_evaluate_enabled(False)
 
         thread = threading.Thread(target=self._run_experiment_thread, args=(exec_mode,))
         thread.start()
@@ -833,21 +923,41 @@ class MainWindow(QMainWindow):
         self.ui_queue.put({"type": "set_statusbar", "message": "Completed"})
         self._log("Experiment completed")
 
-    def _set_all_run_buttons_enabled(self, enabled: bool):
+    def _set_all_run_buttons_enabled(self, enabled: bool, disable_panels: bool = True):
         self.run_btn.setEnabled(enabled)
-        for panel in self.model_panels:
-            if not panel._is_running:
-                panel.run_btn.setEnabled(enabled)
+        if disable_panels:
+            for panel in self.model_panels:
+                if not panel._is_running:
+                    panel.run_btn.setEnabled(enabled)
 
-    def _progress_callback(self, index: int, status: str, model_name: str):
+    def _progress_callback(self, index: int, status: str, model_name: str, content: str = "", reasoning: str = ""):
         if index < len(self.model_panels):
             panel = self.model_panels[index]
-            self.ui_queue.put({
-                "type": "set_status",
-                "panel": panel,
-                "status": status
-            })
-        self._log(f"[Model {index+1}] {status}...")
+            if status == "running":
+                self.ui_queue.put({
+                    "type": "init_response",
+                    "panel": panel,
+                })
+                self.ui_queue.put({
+                    "type": "set_status",
+                    "panel": panel,
+                    "status": status
+                })
+            elif status == "streaming" and (content or reasoning):
+                self.ui_queue.put({
+                    "type": "stream_chunk",
+                    "panel": panel,
+                    "content": content,
+                    "reasoning": reasoning,
+                })
+            else:
+                self.ui_queue.put({
+                    "type": "set_status",
+                    "panel": panel,
+                    "status": status
+                })
+        if status != "streaming":
+            self._log(f"[Model {index+1}] {status}...")
 
     def _stop(self):
         self._log("Stopping all models...")
@@ -973,6 +1083,214 @@ class MainWindow(QMainWindow):
         thread = threading.Thread(target=run_eval)
         thread.start()
 
+    def _save_experiment(self):
+        from ..core.experiment_storage import save_experiment
+        
+        dialog = SaveExperimentDialog(self, self.current_experiment_name)
+        if dialog.exec():
+            name = dialog.get_name()
+            
+            prompts = {
+                "system": self.prompts_area.get_system_prompt(),
+                "user": self.prompts_area.get_user_prompt(),
+            }
+            
+            model_configs = []
+            for panel in self.model_panels:
+                config = panel.get_model_config()
+                model_configs.append({
+                    "name": config.name,
+                    "custom_endpoint": config.custom_endpoint,
+                    "custom_api_token": config.custom_api_token,
+                    "temperature": config.temperature,
+                    "top_p": config.top_p,
+                    "top_k": config.top_k,
+                    "prompt_modifier": config.prompt_modifier,
+                    "stop_sequences": config.stop_sequences,
+                    "max_tokens": config.max_tokens,
+                    "frequency_penalty": config.frequency_penalty,
+                    "presence_penalty": config.presence_penalty,
+                })
+            
+            execution = self.settings.get("execution", {})
+            eval_model_cfg = self.settings.get("eval_model", {})
+            
+            results = {
+                "model_responses": self.model_responses,
+                "model_stats_keys": list(self.model_stats.keys()),
+            }
+            
+            existing_id = self.current_experiment_id if self.current_experiment_name == name else ""
+            existing_timestamp = ""
+            
+            exp_id = save_experiment(
+                name=name,
+                prompts=prompts,
+                models=model_configs,
+                execution=execution,
+                eval_model=eval_model_cfg,
+                results=results,
+                model_responses=self.model_responses,
+                model_stats=self.model_stats,
+                notes=self.current_notes,
+                existing_id=existing_id,
+                existing_timestamp=existing_timestamp,
+            )
+            
+            self.current_experiment_id = exp_id
+            self.current_experiment_name = name
+            self._update_window_title()
+            self._log(f"Experiment saved: {name}")
+            self.status_bar.showMessage(f"Experiment saved: {name}")
+
+    def _load_experiment(self):
+        dialog = LoadExperimentDialog(self)
+        if dialog.exec():
+            exp_data = dialog.get_selected_data()
+            if exp_data:
+                self.prompts_area.set_system_prompt(exp_data.prompts.get("system", ""))
+                self.prompts_area.set_user_prompt(exp_data.prompts.get("user", ""))
+                
+                api_cfg = self.settings.get("api", {})
+                base_url = api_cfg.get("base_url", "")
+                model_lists = self.settings.get("model_lists", {})
+                
+                saved_models = exp_data.models
+                for i, panel in enumerate(self.model_panels):
+                    settings = panel.get_custom_settings()
+                    endpoint = settings.get("custom_endpoint") or base_url
+                    if endpoint in model_lists and model_lists[endpoint]:
+                        panel.set_model_list(model_lists[endpoint])
+                    
+                    if i < len(saved_models):
+                        model_data = saved_models[i]
+                        panel.set_model(model_data.get("name", ""))
+                        panel.temp_spin.setValue(model_data.get("temperature", 0.7))
+                        panel.top_p_spin.setValue(model_data.get("top_p", 1.0))
+                        panel.top_k_spin.setValue(model_data.get("top_k", -1))
+                        panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
+                        panel.set_custom_settings({
+                            "custom_endpoint": model_data.get("custom_endpoint", ""),
+                            "custom_api_token": model_data.get("custom_api_token", ""),
+                            "max_tokens": model_data.get("max_tokens", 0),
+                            "stop_sequences": model_data.get("stop_sequences", []),
+                            "frequency_penalty": model_data.get("frequency_penalty", 0.0),
+                            "presence_penalty": model_data.get("presence_penalty", 0.0),
+                        })
+                
+                self.settings["execution"] = exp_data.execution
+                self.settings["eval_model"] = exp_data.eval_model
+                
+                self.model_responses = exp_data.model_responses or {}
+                self.model_stats = exp_data.model_stats or {}
+                
+                self.current_experiment_id = exp_data.id
+                self.current_experiment_name = exp_data.name
+                self.current_notes = exp_data.notes or ""
+                self._update_window_title()
+                
+                self.model_json = exp_data.results.get("model_json", {}) if exp_data.results else {}
+                
+                for i, panel in enumerate(self.model_panels):
+                    panel.clear_response()
+                    if i in self.model_responses:
+                        content = self.model_responses[i]
+                        stats = self.model_stats.get(i)
+                        panel.set_response(content, stats)
+                        panel.finalize_response()
+                        
+                        if i in self.model_json:
+                            req_json = self.model_json[i].get("request", {})
+                            res_json = self.model_json[i].get("response", {})
+                            panel.set_json(req_json, res_json)
+                
+                self.eval_area.clear_eval_result()
+                
+                self._log(f"Experiment loaded: {exp_data.name}")
+                self.status_bar.showMessage(f"Experiment loaded: {exp_data.name}")
+
+    def _edit_notes(self):
+        if not self.current_experiment_id:
+            reply = QMessageBox.question(
+                self,
+                "No Experiment",
+                "No experiment loaded. Create a new experiment first?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self._save_experiment()
+            if not self.current_experiment_id:
+                return
+        
+        dialog = NotesEditorDialog(self, self.current_notes, self.current_experiment_id)
+        if dialog.exec():
+            self.current_notes = dialog.get_notes()
+            if self.current_experiment_id:
+                from ..core.experiment_storage import update_notes
+                update_notes(self.current_experiment_id, self.current_notes)
+                self._log("Notes updated")
+                self.status_bar.showMessage("Notes updated")
+
+    def _clear_experiment(self):
+        if self.current_experiment_id:
+            reply = QMessageBox.question(
+                self,
+                "Clear Experiment",
+                "This will clear all current experiment data. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self.prompts_area.clear()
+        
+        for panel in self.model_panels:
+            panel.clear_response()
+            panel.set_model("")
+            panel.temp_spin.setValue(0.7)
+            panel.top_p_spin.setValue(1.0)
+            panel.top_k_spin.setValue(-1)
+            panel.set_prompt_modifier("")
+            panel.set_custom_settings({
+                "custom_endpoint": "",
+                "custom_api_token": "",
+                "max_tokens": 0,
+                "stop_sequences": [],
+                "frequency_penalty": 0.0,
+                "presence_penalty": 0.0,
+            })
+        
+        self.eval_area.clear_eval_result()
+        
+        self.model_responses = {}
+        self.model_stats = {}
+        self.model_json = {}
+        
+        self.current_experiment_id = None
+        self.current_experiment_name = ""
+        self.current_notes = ""
+        
+        self._update_window_title()
+        self._log("Experiment cleared - starting new experiment")
+        self.status_bar.showMessage("New experiment started")
+
     def closeEvent(self, event):
+        if self.current_experiment_id:
+            reply = QMessageBox.question(
+                self,
+                "Save Experiment",
+                "There is an active experiment. Save it before closing?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
+            )
+            if reply == QMessageBox.StandardButton.Save:
+                self._save_experiment()
+                event.accept()
+            elif reply == QMessageBox.StandardButton.Discard:
+                event.accept()
+            else:
+                event.ignore()
+                return
+        
         self._save_config()
         event.accept()

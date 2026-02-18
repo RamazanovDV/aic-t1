@@ -9,22 +9,23 @@ A PyQt6 GUI application for experimenting with LLM models. The application allow
 ```
 /home/eof/dev/aic/t1/
 ├── main.py                    # Application entry point
-├── config.json                # User configuration (gitignored)
-├── config.json.example        # Configuration template
 ├── requirements.txt           # Python dependencies
 ├── llm_experiment_lab/
 │   ├── api/
 │   │   └── client.py         # LLM API client (httpx)
+│   ├── config.py             # Configuration paths and migration
 │   ├── core/
 │   │   ├── experiment.py     # Experiment runner
+│   │   ├── experiment_storage.py  # Experiment save/load
 │   │   ├── evaluator.py      # Response evaluation
-│   │   └── statistics.py      # Stats dataclasses
+│   │   └── statistics.py     # Stats dataclasses
 │   └── gui/
 │       ├── main_window.py     # Main application window
 │       ├── model_panel.py     # Model input/output panel
 │       ├── prompts_area.py    # Prompt input area
 │       ├── eval_area.py       # Evaluation panel
 │       ├── settings_dialog.py # Settings dialog
+│       ├── experiment_dialog.py # Save/Load/Notes dialogs
 │       └── json_viewer.py     # JSON viewer widget
 ```
 
@@ -251,9 +252,10 @@ class LLMAPIClient:
 
 ### Configuration
 
-- Configuration is stored in `config.json` (gitignored)
-- Use `config.json.example` as a template
-- Default settings are defined in code (see `MainWindow._default_settings`)
+- Configuration is stored in `~/.config/llmexplab/config.json`
+- Experiments are stored in `~/.config/llmexplab/experiments/`
+- Each experiment is in its own subdirectory with `experiment.json` and `notes.md`
+- Default settings are defined in code (see `config.py::get_default_config`)
 
 ### Threading
 

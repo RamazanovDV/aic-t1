@@ -137,20 +137,39 @@ class Experiment:
         if model.prompt_modifier:
             full_user_prompt = user_prompt + "\n\n" + model.prompt_modifier
 
-        response = await self.client.chat_completion(
-            model.name,
-            system_prompt,
-            full_user_prompt,
-            model.temperature,
-            model.top_p,
-            model.top_k,
-            model.custom_endpoint,
-            model.custom_api_token,
-            stop=model.stop_sequences if model.stop_sequences else None,
-            max_tokens=model.max_tokens or 0,
-            frequency_penalty=model.frequency_penalty,
-            presence_penalty=model.presence_penalty,
-        )
+        if progress_callback:
+            def on_chunk(content: str, reasoning: str):
+                progress_callback(index, "streaming", model.name, content, reasoning)
+            response = await self.client.chat_completion_stream(
+                model.name,
+                system_prompt,
+                full_user_prompt,
+                model.temperature,
+                model.top_p,
+                model.top_k,
+                model.custom_endpoint,
+                model.custom_api_token,
+                stop=model.stop_sequences if model.stop_sequences else None,
+                max_tokens=model.max_tokens or 0,
+                frequency_penalty=model.frequency_penalty,
+                presence_penalty=model.presence_penalty,
+                on_chunk=on_chunk,
+            )
+        else:
+            response = await self.client.chat_completion_stream(
+                model.name,
+                system_prompt,
+                full_user_prompt,
+                model.temperature,
+                model.top_p,
+                model.top_k,
+                model.custom_endpoint,
+                model.custom_api_token,
+                stop=model.stop_sequences if model.stop_sequences else None,
+                max_tokens=model.max_tokens or 0,
+                frequency_penalty=model.frequency_penalty,
+                presence_penalty=model.presence_penalty,
+            )
 
         if self._is_cancelled and response.error != "Cancelled":
             response.error = "Cancelled"

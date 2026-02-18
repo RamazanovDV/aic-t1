@@ -49,6 +49,44 @@ class ModelPanel(QWidget):
     def __init__(self, title: str = "Model", parent=None):
         super().__init__(parent)
         self.title = title
+        self._md = mistune.create_markdown(plugins=['table', 'strikethrough', 'url'])
+        self._html_style = """
+        <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.0;
+            color: #e0e0e0;
+            background-color: #2b2b2b;
+            padding: 10px;
+        }
+        pre {
+            background-color: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #ffffff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        blockquote {
+            border-left: 4px solid #666;
+            margin-left: 0;
+            padding-left: 15px;
+            color: #aaa;
+        }
+        a { color: #6cb6ff; }
+        table { border-collapse: collapse; }
+        th, td { border: 1px solid #444; padding: 8px; }
+        </style>
+        """
         self._init_ui()
 
     def _init_ui(self):
@@ -273,52 +311,14 @@ class ModelPanel(QWidget):
         if not text:
             return ""
         
-        md = mistune.create_markdown(plugins=['table', 'strikethrough', 'url'])
+        html = self._md(text)
         
-        html = md(text)
-        
-        style = """
-        <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 13px;
-            line-height: 1.0;
-            color: #e0e0e0;
-            background-color: #2b2b2b;
-            padding: 10px;
-        }
-        pre {
-            background-color: #1e1e1e;
-            border: 1px solid #444;
-            border-radius: 4px;
-            padding: 10px;
-            overflow-x: auto;
-        }
-        code {
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 12px;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            color: #ffffff;
-            border-bottom: 1px solid #444;
-            padding-bottom: 5px;
-        }
-        blockquote {
-            border-left: 4px solid #666;
-            margin-left: 0;
-            padding-left: 15px;
-            color: #aaa;
-        }
-        a { color: #6cb6ff; }
-        table { border-collapse: collapse; }
-        th, td { border: 1px solid #444; padding: 8px; }
-        </style>
-        """
-        
-        return f"<html><head>{style}</head><body>{html}</body></html>"
+        return f"{html}"
 
     def set_response(self, content: str, stats=None):
-        self.response_edit.setHtml(self._render_markdown(content))
+        html = self._render_markdown(content)
+        full_html = f"<html><head>{self._html_style}</head><body>{html}</body></html>"
+        self.response_edit.setHtml(full_html)
         if stats:
             self.time_label.setText(f"Time: {stats.response_time:.2f}s")
             self.tokens_label.setText(
@@ -332,6 +332,31 @@ class ModelPanel(QWidget):
                 self.reasoning_edit.setVisible(False)
                 self.reasoning_toggle.setChecked(False)
                 self.reasoning_edit.setMaximumHeight(0)
+
+    def init_response(self):
+        self._accumulated_content = ""
+        empty_html = f"<html><head>{self._html_style}</head><body></body></html>"
+        self.response_edit.setHtml(empty_html)
+
+    def append_response(self, new_content: str):
+        self._accumulated_content += new_content
+        cursor = self.response_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(new_content)
+        self.response_edit.setTextCursor(cursor)
+
+    def finalize_response(self):
+        html = self._render_markdown(self._accumulated_content)
+        full_html = f"<html><head>{self._html_style}</head><body>{html}</body></html>"
+        self.response_edit.setHtml(full_html)
+
+    def append_reasoning(self, new_reasoning: str):
+        self.reasoning_toggle.setVisible(True)
+        self.reasoning_edit.setVisible(True)
+        cursor = self.reasoning_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(new_reasoning)
+        self.reasoning_edit.setTextCursor(cursor)
 
     def set_json(self, request_json: dict, response_json: dict):
         self.request_json = request_json
@@ -370,7 +395,7 @@ class ModelPanel(QWidget):
         self.status_indicator.set_status(status)
 
     def clear_response(self):
-        self.response_edit.clear()
+        self.response_edit.setHtml("")
         self.reasoning_edit.clear()
         self.reasoning_toggle.setVisible(False)
         self.reasoning_edit.setVisible(False)
