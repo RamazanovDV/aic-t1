@@ -341,6 +341,9 @@ class MainWindow(QMainWindow):
                 if exp_data.eval_result:
                     self.eval_area.set_eval_result(exp_data.eval_result)
                 
+                if self.model_responses:
+                    self.eval_area.set_evaluate_enabled(True)
+                
                 self._log(f"Last experiment loaded: {exp_data.name}")
                 self.status_bar.showMessage(f"Last experiment loaded: {exp_data.name}")
 
@@ -500,6 +503,9 @@ class MainWindow(QMainWindow):
                         }
                     
                     self.model_stats[idx] = stat
+                    
+                    if not stat.error:
+                        self.eval_area.set_evaluate_enabled(True)
                     
                 elif op_type == "eval_json":
                     self.eval_area.set_eval_json(
@@ -1269,6 +1275,9 @@ class MainWindow(QMainWindow):
                 
                 if exp_data.eval_result:
                     self.eval_area.set_eval_result(exp_data.eval_result)
+                
+                if self.model_responses:
+                    self.eval_area.set_evaluate_enabled(True)
                 
                 self._log(f"Experiment loaded: {exp_data.name}")
                 self.status_bar.showMessage(f"Experiment loaded: {exp_data.name}")
