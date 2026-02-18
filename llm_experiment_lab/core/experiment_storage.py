@@ -54,6 +54,8 @@ def _serialize_stats(stats_dict: Dict[Any, Any]) -> Dict[str, Any]:
                 "reasoning": value.reasoning,
                 "timestamp": value.timestamp.isoformat() if value.timestamp else "",
                 "error": value.error,
+                "raw_request": value.raw_request,
+                "raw_response": value.raw_response,
             }
         else:
             serialized[str_key] = value
@@ -86,6 +88,8 @@ def _deserialize_stats(serialized: Dict[str, Any]) -> Dict[int, Any]:
                     "reasoning": value.get("reasoning"),
                     "timestamp": ts,
                     "error": value.get("error"),
+                    "raw_request": value.get("raw_request", {}),
+                    "raw_response": value.get("raw_response", {}),
                 },
             )()
         else:

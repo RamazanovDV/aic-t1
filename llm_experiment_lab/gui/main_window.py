@@ -309,6 +309,29 @@ class MainWindow(QMainWindow):
                 self.model_responses = exp_data.model_responses or {}
                 self.model_stats = exp_data.model_stats or {}
                 
+                self.model_json = exp_data.results.get("model_json", {}) if exp_data.results else {}
+                
+                for i, panel in enumerate(self.model_panels):
+                    panel.clear_response()
+                    if i in self.model_responses:
+                        response_data = self.model_responses[i]
+                        if isinstance(response_data, dict):
+                            content = response_data.get("content", "")
+                        else:
+                            content = response_data
+                        stats = self.model_stats.get(i)
+                        panel.set_response(content, stats)
+
+                        if stats and hasattr(stats, 'raw_request') and hasattr(stats, 'raw_response'):
+                            req_json = stats.raw_request
+                            res_json = stats.raw_response
+                            if req_json or res_json:
+                                panel.set_json(req_json, res_json)
+                        elif i in self.model_json:
+                            req_json = self.model_json[i].get("request", {})
+                            res_json = self.model_json[i].get("response", {})
+                            panel.set_json(req_json, res_json)
+                
                 self.current_experiment_id = exp_data.id
                 self.current_experiment_name = exp_data.name
                 self.current_notes = exp_data.notes or ""
@@ -1194,12 +1217,20 @@ class MainWindow(QMainWindow):
                 for i, panel in enumerate(self.model_panels):
                     panel.clear_response()
                     if i in self.model_responses:
-                        content = self.model_responses[i]
+                        response_data = self.model_responses[i]
+                        if isinstance(response_data, dict):
+                            content = response_data.get("content", "")
+                        else:
+                            content = response_data
                         stats = self.model_stats.get(i)
                         panel.set_response(content, stats)
-                        panel.finalize_response()
-                        
-                        if i in self.model_json:
+
+                        if stats and hasattr(stats, 'raw_request') and hasattr(stats, 'raw_response'):
+                            req_json = stats.raw_request
+                            res_json = stats.raw_response
+                            if req_json or res_json:
+                                panel.set_json(req_json, res_json)
+                        elif i in self.model_json:
                             req_json = self.model_json[i].get("request", {})
                             res_json = self.model_json[i].get("response", {})
                             panel.set_json(req_json, res_json)
