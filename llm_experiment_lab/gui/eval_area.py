@@ -203,10 +203,7 @@ class EvalArea(QWidget):
         layout.addWidget(request_edit)
         
         response_edit = QTextEdit()
-        response_text = json.dumps(self.eval_response_json, indent=2, ensure_ascii=False)
-        if self.eval_response_json.get("streaming") == True:
-            response_text = "(Streaming response - full response not available)"
-        response_edit.setPlainText(response_text)
+        response_edit.setPlainText(json.dumps(self.eval_response_json, indent=2, ensure_ascii=False))
         response_edit.setReadOnly(True)
         layout.addWidget(response_edit)
         

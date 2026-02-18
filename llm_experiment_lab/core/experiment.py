@@ -156,7 +156,7 @@ class Experiment:
                 on_chunk=on_chunk,
             )
         else:
-            response = await self.client.chat_completion_stream(
+            response = await self.client.chat_completion(
                 model.name,
                 system_prompt,
                 full_user_prompt,
