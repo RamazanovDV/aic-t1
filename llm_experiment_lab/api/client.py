@@ -360,7 +360,17 @@ class LLMAPIClient:
                 total_tokens=prompt_tokens_from_stream + total_completion_tokens,
                 response_time=response_time,
                 raw_request=request_data,
-                raw_response={"streaming": True},
+                raw_response={
+                    "streaming": True,
+                    "usage": {
+                        "prompt_tokens": prompt_tokens_from_stream,
+                        "completion_tokens": total_completion_tokens,
+                        "total_tokens": prompt_tokens_from_stream + total_completion_tokens,
+                    },
+                    "response_time": response_time,
+                    "content": "".join(accumulated_content),
+                    "reasoning": "".join(accumulated_reasoning) if accumulated_reasoning else None,
+                },
                 reasoning="".join(accumulated_reasoning) if accumulated_reasoning else None,
             )
 
