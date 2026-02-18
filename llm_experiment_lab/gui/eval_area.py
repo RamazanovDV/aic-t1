@@ -12,6 +12,31 @@ from typing import Optional
 from PyQt6.QtCore import pyqtSignal
 
 
+COLORS = {
+    "idle": "#6c757d",
+    "running": "#0dcaf0",
+    "success": "#198754",
+    "error": "#dc3545",
+}
+
+
+class StatusIndicator(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(12, 12)
+        self.set_status("idle")
+
+    def set_status(self, status: str):
+        color = COLORS.get(status, COLORS["idle"])
+        self.setStyleSheet(f"""
+            QLabel {{
+                background-color: {color};
+                border-radius: 6px;
+                border: 1px solid #444;
+            }}
+        """)
+
+
 class EvalArea(QWidget):
     evaluate_clicked = pyqtSignal()
     stop_evaluate_clicked = pyqtSignal()
@@ -51,10 +76,10 @@ class EvalArea(QWidget):
 
         self.evaluate_btn = QPushButton("Run Evaluation")
         self.evaluate_btn.clicked.connect(self._on_evaluate_btn_clicked)
-        settings_layout.addWidget(self.evaluate_btn)
 
-        self.eval_status_label = QLabel("")
-        settings_layout.addWidget(self.eval_status_label)
+        self.eval_status_indicator = StatusIndicator()
+        settings_layout.addWidget(self.eval_status_indicator)
+        settings_layout.addWidget(self.evaluate_btn)
 
         self.show_json_btn = QPushButton("Show JSON")
         self.show_json_btn.setEnabled(False)
@@ -98,10 +123,13 @@ class EvalArea(QWidget):
         self._is_running = running
         if running:
             self.evaluate_btn.setText("Stop Evaluation")
-            self.eval_status_label.setText("Running...")
+            self.eval_status_indicator.set_status("running")
         else:
             self.evaluate_btn.setText("Run Evaluation")
-            self.eval_status_label.setText("")
+            self.eval_status_indicator.set_status("idle")
+
+    def set_status(self, status: str):
+        self.eval_status_indicator.set_status(status)
 
     def get_eval_config(self):
         return {
