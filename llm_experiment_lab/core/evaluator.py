@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import List, Optional, Callable
 from ..api.client import LLMAPIClient, ModelResponse
 from ..core.statistics import ModelStats
 
@@ -32,6 +32,34 @@ class Evaluator:
             temperature=temperature,
             top_p=1.0,
             top_k=-1,
+        )
+
+        return result.content if not result.error else f"Error: {result.error}", result
+
+    async def evaluate_stream(
+        self,
+        eval_model: str,
+        system_prompt: str,
+        user_prompt: str,
+        responses: List[dict],
+        temperature: float = 0.3,
+        eval_system_prompt: str = "",
+        on_chunk: Optional[Callable[[str, str], None]] = None,
+    ) -> tuple[str, ModelResponse]:
+        eval_prompt = self._build_eval_prompt(
+            system_prompt, user_prompt, responses
+        )
+
+        final_system_prompt = eval_system_prompt if eval_system_prompt else self.DEFAULT_SYSTEM_PROMPT
+
+        result = await self.client.chat_completion_stream(
+            model=eval_model,
+            system_prompt=final_system_prompt,
+            user_prompt=eval_prompt,
+            temperature=temperature,
+            top_p=1.0,
+            top_k=-1,
+            on_chunk=on_chunk,
         )
 
         return result.content if not result.error else f"Error: {result.error}", result

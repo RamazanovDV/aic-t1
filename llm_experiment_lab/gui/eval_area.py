@@ -118,6 +118,20 @@ class EvalArea(QWidget):
         self.eval_request_json = None
         self.eval_response_json = None
 
+    def append_eval_result(self, new_content: str):
+        cursor = self.eval_result_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(new_content)
+        self.eval_result_edit.setTextCursor(cursor)
+
+    def append_eval_reasoning(self, new_reasoning: str):
+        self.reasoning_toggle.setVisible(True)
+        self.reasoning_edit.setVisible(True)
+        cursor = self.reasoning_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(new_reasoning)
+        self.reasoning_edit.setTextCursor(cursor)
+
     def _toggle_reasoning(self):
         is_expanded = self.reasoning_toggle.isChecked()
         if is_expanded:

@@ -459,6 +459,12 @@ class MainWindow(QMainWindow):
                     self.eval_area.set_evaluate_enabled(op.get("enabled", True))
                 elif op_type == "set_statusbar":
                     self.status_bar.showMessage(op.get("message"))
+                elif op_type == "eval_stream_chunk":
+                    content = op.get("content", "")
+                    reasoning = op.get("reasoning", "")
+                    self.eval_area.append_eval_result(content)
+                    if reasoning:
+                        self.eval_area.append_eval_reasoning(reasoning)
                 elif op_type == "eval_result":
                     self.eval_area.set_eval_result(
                         op.get("result", ""),
@@ -1058,14 +1064,26 @@ class MainWindow(QMainWindow):
             try:
                 self._log("Sending evaluation request...")
                 eval_system_prompt = self.settings.get("eval_model", {}).get("system_prompt", "")
+
+                accumulated_content = []
+
+                def on_chunk(content: str, reasoning: str):
+                    accumulated_content.append(content)
+                    self.ui_queue.put({
+                        "type": "eval_stream_chunk",
+                        "content": content,
+                        "reasoning": reasoning,
+                    })
+
                 result, raw = loop.run_until_complete(
-                    self.evaluator.evaluate(
+                    self.evaluator.evaluate_stream(
                         eval_model=eval_config["model"],
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
                         responses=responses,
                         temperature=eval_config.get("temperature", 0.3),
                         eval_system_prompt=eval_system_prompt,
+                        on_chunk=on_chunk,
                     )
                 )
 
