@@ -1062,7 +1062,8 @@ class MainWindow(QMainWindow):
 
         self._log(f"Evaluating {len(responses)} model responses...")
 
-        self.eval_area.set_evaluate_enabled(False)
+        self.eval_area.clear_eval_result()
+        self.eval_area.set_running(True)
         self._set_all_run_buttons_enabled(False)
         self.status_bar.showMessage("Running evaluation...")
         self._log("Starting evaluation...")
@@ -1129,7 +1130,8 @@ class MainWindow(QMainWindow):
                 self._log(traceback.format_exc())
             finally:
                 self.eval_area.set_running(False)
-                self.ui_queue.put({"type": "enable_eval", "enabled": True})
+                if self.model_responses:
+                    self.eval_area.set_evaluate_enabled(True)
                 self._set_all_run_buttons_enabled(True)
                 loop.close()
 

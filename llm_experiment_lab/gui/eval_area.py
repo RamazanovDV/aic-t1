@@ -123,6 +123,7 @@ class EvalArea(QWidget):
         self._is_running = running
         if running:
             self.evaluate_btn.setText("Stop Evaluation")
+            self.evaluate_btn.setEnabled(True)
             self.eval_status_indicator.set_status("running")
         else:
             self.evaluate_btn.setText("Run Evaluation")
@@ -145,7 +146,7 @@ class EvalArea(QWidget):
             self.eval_model_combo.setCurrentText(model_name)
 
     def set_eval_result(self, text: str, reasoning: Optional[str] = None):
-        self.eval_result_edit.setHtml(self._render_markdown(text))
+        self.eval_result_edit.setMarkdown(text)
         if reasoning:
             self.reasoning_edit.setPlainText(reasoning)
             self.reasoning_toggle.setVisible(True)
@@ -155,8 +156,13 @@ class EvalArea(QWidget):
             self.reasoning_toggle.setChecked(False)
             self.reasoning_edit.setMaximumHeight(0)
 
+    def clear_and_set_eval_result(self, text: str, reasoning: Optional[str] = None):
+        self.eval_result_edit.clear()
+        self.reasoning_edit.clear()
+        self.set_eval_result(text, reasoning)
+
     def get_eval_result(self) -> str:
-        return self.eval_result_edit.toHtml()
+        return self.eval_result_edit.toMarkdown()
 
     def clear_eval_result(self):
         self.eval_result_edit.clear()
