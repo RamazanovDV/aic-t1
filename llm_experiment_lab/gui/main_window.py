@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self.current_experiment_id = None
         self.current_experiment_name = ""
         self.current_notes = ""
+        self._is_modified = False
 
         self.log_queue = queue.Queue()
         self.ui_queue = queue.Queue()
@@ -225,6 +226,10 @@ class MainWindow(QMainWindow):
         self.save_exp_btn.clicked.connect(self._save_experiment)
         control_layout.addWidget(self.save_exp_btn)
 
+        self.save_as_exp_btn = QPushButton("Save As...")
+        self.save_as_exp_btn.clicked.connect(self._save_experiment_as)
+        control_layout.addWidget(self.save_as_exp_btn)
+
         self.load_exp_btn = QPushButton("Load Experiment")
         self.load_exp_btn.clicked.connect(self._load_experiment)
         control_layout.addWidget(self.load_exp_btn)
@@ -267,6 +272,12 @@ class MainWindow(QMainWindow):
         self._load_saved_models()
         self._restore_window_state()
         self._load_last_experiment()
+        
+        self.prompts_area.changed.connect(self._on_experiment_changed)
+
+    def _on_experiment_changed(self):
+        if self.current_experiment_id:
+            self._is_modified = True
 
     def _load_last_experiment(self):
         last_exp_id = self.settings.get("last_experiment_id")
@@ -336,6 +347,7 @@ class MainWindow(QMainWindow):
                 self.current_experiment_id = exp_data.id
                 self.current_experiment_name = exp_data.name
                 self.current_notes = exp_data.notes or ""
+                self._is_modified = False
                 self._update_window_title()
                 
                 if exp_data.eval_result:
@@ -1144,65 +1156,82 @@ class MainWindow(QMainWindow):
         self.eval_area.set_running(False)
 
     def _save_experiment(self):
+        if self.current_experiment_id and not self._is_modified:
+            return
+        
+        if self.current_experiment_id:
+            self._do_save_experiment(self.current_experiment_name)
+        else:
+            self._show_save_dialog()
+
+    def _save_experiment_as(self):
+        self._show_save_dialog()
+
+    def _show_save_dialog(self):
         from ..core.experiment_storage import save_experiment
         
         dialog = SaveExperimentDialog(self, self.current_experiment_name)
         if dialog.exec():
             name = dialog.get_name()
-            
-            prompts = {
-                "system": self.prompts_area.get_system_prompt(),
-                "user": self.prompts_area.get_user_prompt(),
-            }
-            
-            model_configs = []
-            for panel in self.model_panels:
-                config = panel.get_model_config()
-                model_configs.append({
-                    "name": config.name,
-                    "custom_endpoint": config.custom_endpoint,
-                    "custom_api_token": config.custom_api_token,
-                    "temperature": config.temperature,
-                    "top_p": config.top_p,
-                    "top_k": config.top_k,
-                    "prompt_modifier": config.prompt_modifier,
-                    "stop_sequences": config.stop_sequences,
-                    "max_tokens": config.max_tokens,
-                    "frequency_penalty": config.frequency_penalty,
-                    "presence_penalty": config.presence_penalty,
-                })
-            
-            execution = self.settings.get("execution", {})
-            eval_model_cfg = self.settings.get("eval_model", {})
-            
-            results = {
-                "model_responses": self.model_responses,
-                "model_stats_keys": list(self.model_stats.keys()),
-            }
-            
-            existing_id = self.current_experiment_id if self.current_experiment_name == name else ""
-            existing_timestamp = ""
-            
-            exp_id = save_experiment(
-                name=name,
-                prompts=prompts,
-                models=model_configs,
-                execution=execution,
-                eval_model=eval_model_cfg,
-                results=results,
-                model_responses=self.model_responses,
-                model_stats=self.model_stats,
-                eval_result=self.eval_area.get_eval_result(),
-                notes=self.current_notes,
-                existing_id=existing_id,
-                existing_timestamp=existing_timestamp,
-            )
-            
-            self.current_experiment_id = exp_id
-            self.current_experiment_name = name
-            self._update_window_title()
-            self._log(f"Experiment saved: {name}")
-            self.status_bar.showMessage(f"Experiment saved: {name}")
+            self._do_save_experiment(name, force_new=True)
+
+    def _do_save_experiment(self, name: str, force_new: bool = False):
+        from ..core.experiment_storage import save_experiment
+        
+        prompts = {
+            "system": self.prompts_area.get_system_prompt(),
+            "user": self.prompts_area.get_user_prompt(),
+        }
+        
+        model_configs = []
+        for panel in self.model_panels:
+            config = panel.get_model_config()
+            model_configs.append({
+                "name": config.name,
+                "custom_endpoint": config.custom_endpoint,
+                "custom_api_token": config.custom_api_token,
+                "temperature": config.temperature,
+                "top_p": config.top_p,
+                "top_k": config.top_k,
+                "prompt_modifier": config.prompt_modifier,
+                "stop_sequences": config.stop_sequences,
+                "max_tokens": config.max_tokens,
+                "frequency_penalty": config.frequency_penalty,
+                "presence_penalty": config.presence_penalty,
+            })
+        
+        execution = self.settings.get("execution", {})
+        eval_model_cfg = self.settings.get("eval_model", {})
+        
+        results = {
+            "model_responses": self.model_responses,
+            "model_stats_keys": list(self.model_stats.keys()),
+        }
+        
+        existing_id = "" if force_new else self.current_experiment_id
+        existing_timestamp = ""
+        
+        exp_id = save_experiment(
+            name=name,
+            prompts=prompts,
+            models=model_configs,
+            execution=execution,
+            eval_model=eval_model_cfg,
+            results=results,
+            model_responses=self.model_responses,
+            model_stats=self.model_stats,
+            eval_result=self.eval_area.get_eval_result(),
+            notes=self.current_notes,
+            existing_id=existing_id,
+            existing_timestamp=existing_timestamp,
+        )
+        
+        self.current_experiment_id = exp_id
+        self.current_experiment_name = name
+        self._is_modified = False
+        self._update_window_title()
+        self._log(f"Experiment saved: {name}")
+        self.status_bar.showMessage(f"Experiment saved: {name}")
 
     def _load_experiment(self):
         dialog = LoadExperimentDialog(self)
@@ -1248,6 +1277,7 @@ class MainWindow(QMainWindow):
                 self.current_experiment_id = exp_data.id
                 self.current_experiment_name = exp_data.name
                 self.current_notes = exp_data.notes or ""
+                self._is_modified = False
                 self._update_window_title()
                 
                 self.model_json = exp_data.results.get("model_json", {}) if exp_data.results else {}
@@ -1351,7 +1381,7 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("New experiment started")
 
     def closeEvent(self, event):
-        if self.current_experiment_id:
+        if self.current_experiment_id and self._is_modified:
             reply = QMessageBox.question(
                 self,
                 "Save Experiment",
