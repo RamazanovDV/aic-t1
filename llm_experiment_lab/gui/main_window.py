@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QMessageBox, QSplitter,
     QStatusBar, QTextEdit, QLabel, QToolBar,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QSize
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QStyle
 
@@ -184,7 +184,7 @@ class MainWindow(QMainWindow):
 
         toolbar = QToolBar()
         toolbar.setMovable(False)
-        toolbar.setIconSize(24)
+        toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(toolbar)
 
         style = self.style()
