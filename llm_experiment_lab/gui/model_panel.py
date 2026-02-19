@@ -40,6 +40,7 @@ class StatusIndicator(QLabel):
 
 class ModelPanel(QWidget):
     config_changed = pyqtSignal()
+    response_changed = pyqtSignal()
     dropdown_opened = pyqtSignal()
     run_clicked = pyqtSignal()
     stop_clicked = pyqtSignal()
@@ -234,10 +235,16 @@ class ModelPanel(QWidget):
 
     def _on_settings_btn_clicked(self):
         from .model_settings_dialog import ModelSettingsDialog
-        dialog = ModelSettingsDialog(self)
+        
+        main_window = self.window()
+        
+        endpoints = []
+        if main_window and hasattr(main_window, 'settings'):
+            endpoints = main_window.settings.get("endpoints", [])
+        
+        dialog = ModelSettingsDialog(self, endpoints=endpoints)
         dialog.set_settings({
-            "custom_endpoint": getattr(self, "_custom_endpoint", ""),
-            "custom_api_token": getattr(self, "_custom_api_token", ""),
+            "endpoint_id": getattr(self, "_endpoint_id", ""),
             "max_tokens": getattr(self, "_max_tokens", 0),
             "stop_sequences": getattr(self, "_stop_sequences", []),
             "frequency_penalty": getattr(self, "_frequency_penalty", 0.0),
@@ -245,8 +252,7 @@ class ModelPanel(QWidget):
         })
         if dialog.exec():
             settings = dialog.get_settings()
-            self._custom_endpoint = settings["custom_endpoint"]
-            self._custom_api_token = settings["custom_api_token"]
+            self._endpoint_id = settings["endpoint_id"]
             self._max_tokens = settings["max_tokens"]
             self._stop_sequences = settings["stop_sequences"]
             self._frequency_penalty = settings["frequency_penalty"]
@@ -257,8 +263,7 @@ class ModelPanel(QWidget):
         from ..core.experiment import ModelConfig
         return ModelConfig(
             name=self.model_combo.currentText(),
-            custom_endpoint=getattr(self, "_custom_endpoint", ""),
-            custom_api_token=getattr(self, "_custom_api_token", ""),
+            endpoint_id=getattr(self, "_endpoint_id", ""),
             temperature=self.temp_spin.value(),
             top_p=self.top_p_spin.value(),
             top_k=self.top_k_spin.value(),
@@ -277,8 +282,7 @@ class ModelPanel(QWidget):
 
     def get_custom_settings(self) -> dict:
         return {
-            "custom_endpoint": getattr(self, "_custom_endpoint", ""),
-            "custom_api_token": getattr(self, "_custom_api_token", ""),
+            "endpoint_id": getattr(self, "_endpoint_id", ""),
             "max_tokens": getattr(self, "_max_tokens", 0),
             "stop_sequences": getattr(self, "_stop_sequences", []),
             "frequency_penalty": getattr(self, "_frequency_penalty", 0.0),
@@ -286,8 +290,7 @@ class ModelPanel(QWidget):
         }
 
     def set_custom_settings(self, settings: dict):
-        self._custom_endpoint = settings.get("custom_endpoint", "")
-        self._custom_api_token = settings.get("custom_api_token", "")
+        self._endpoint_id = settings.get("endpoint_id", "")
         self._max_tokens = settings.get("max_tokens", 0)
         self._stop_sequences = settings.get("stop_sequences", [])
         self._frequency_penalty = settings.get("frequency_penalty", 0.0)
@@ -334,6 +337,7 @@ class ModelPanel(QWidget):
                 self.reasoning_edit.setVisible(False)
                 self.reasoning_toggle.setChecked(False)
                 self.reasoning_edit.setMaximumHeight(0)
+        self.response_changed.emit()
 
     def init_response(self):
         self._accumulated_content = ""

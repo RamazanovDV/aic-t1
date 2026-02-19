@@ -321,6 +321,7 @@ class MainWindow(QMainWindow):
             panel.run_clicked.connect(lambda idx=i: self._run_single(idx))
             panel.stop_clicked.connect(lambda idx=i: self._stop_model(idx))
             panel.config_changed.connect(self._on_experiment_changed)
+            panel.response_changed.connect(self._on_experiment_changed)
             models_layout.addWidget(panel)
         models_widget.setLayout(models_layout)
         splitter.addWidget(models_widget)

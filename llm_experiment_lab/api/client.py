@@ -23,14 +23,28 @@ class ModelResponse:
 class LLMAPIClient:
     def __init__(
         self,
-        api_key: str,
+        api_key: str = "",
         base_url: str = "https://api.openai.com/v1",
         verify_ssl: bool = True,
+        endpoints: Optional[List[dict]] = None,
+        default_endpoint_id: str = "",
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self._cancel_event: asyncio.Event = asyncio.Event()
+        self.endpoints = endpoints or []
+        self.default_endpoint_id = default_endpoint_id
+
+    def get_endpoint_config(self, endpoint_id: str = "") -> tuple[str, str]:
+        if not endpoint_id:
+            endpoint_id = self.default_endpoint_id
+        
+        for ep in self.endpoints:
+            if ep.get("id") == endpoint_id:
+                return ep.get("url", self.base_url), ep.get("api_key", self.api_key)
+        
+        return self.base_url, self.api_key
 
     async def chat_completion(
         self,
@@ -40,20 +54,18 @@ class LLMAPIClient:
         temperature: float = 0.7,
         top_p: float = 1.0,
         top_k: int = -1,
-        custom_endpoint: str = "",
-        custom_api_token: str = "",
+        endpoint_id: str = "",
         stop: Optional[List[str]] = None,
         max_tokens: int = 0,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
     ) -> ModelResponse:
-        if custom_endpoint:
-            if "/chat/completions" in custom_endpoint or "/completions" in custom_endpoint:
-                endpoint = custom_endpoint
-            else:
-                endpoint = f"{custom_endpoint.rstrip('/')}/chat/completions"
+        endpoint_url, api_token = self.get_endpoint_config(endpoint_id)
+        
+        if "/chat/completions" in endpoint_url or "/completions" in endpoint_url:
+            endpoint = endpoint_url
         else:
-            endpoint = f"{self.base_url}/chat/completions"
+            endpoint = f"{endpoint_url.rstrip('/')}/chat/completions"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -82,14 +94,13 @@ class LLMAPIClient:
         if presence_penalty != 0.0:
             request_data["presence_penalty"] = presence_penalty
 
-        api_token = custom_api_token if custom_api_token else self.api_key
         headers = {
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
         }
 
         print(f"[DEBUG] API Request:")
-        print(f"  Custom endpoint provided: {custom_endpoint if custom_endpoint else '(none)'}")
+        print(f"  Endpoint ID: {endpoint_id if endpoint_id else '(default)'}")
         print(f"  Full URL: {endpoint}")
         print(f"  Model: {model}")
         print(f"  Temperature: {temperature}, Top_p: {top_p}, Top_k: {top_k}")
@@ -212,21 +223,19 @@ class LLMAPIClient:
         temperature: float = 0.7,
         top_p: float = 1.0,
         top_k: int = -1,
-        custom_endpoint: str = "",
-        custom_api_token: str = "",
+        endpoint_id: str = "",
         stop: Optional[List[str]] = None,
         max_tokens: int = 0,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
         on_chunk: Optional[Callable[[str, str], None]] = None,
     ) -> ModelResponse:
-        if custom_endpoint:
-            if "/chat/completions" in custom_endpoint or "/completions" in custom_endpoint:
-                endpoint = custom_endpoint
-            else:
-                endpoint = f"{custom_endpoint.rstrip('/')}/chat/completions"
+        endpoint_url, api_token = self.get_endpoint_config(endpoint_id)
+        
+        if "/chat/completions" in endpoint_url or "/completions" in endpoint_url:
+            endpoint = endpoint_url
         else:
-            endpoint = f"{self.base_url}/chat/completions"
+            endpoint = f"{endpoint_url.rstrip('/')}/chat/completions"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -256,7 +265,6 @@ class LLMAPIClient:
         if presence_penalty != 0.0:
             request_data["presence_penalty"] = presence_penalty
 
-        api_token = custom_api_token if custom_api_token else self.api_key
         headers = {
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
@@ -293,45 +301,49 @@ class LLMAPIClient:
                     response.raise_for_status()
                     
                     cancelled = False
+                    done_receiving = False
                     total_completion_tokens = 0
                     prompt_tokens_from_stream = 0
-                    async for line in response.aiter_lines():
-                        if self._cancel_event.is_set():
-                            cancelled = True
-                            break
-                        
-                        if not line.strip() or not line.startswith("data: "):
-                            continue
-                        
-                        if line.strip() == "data: [DONE]":
-                            break
-                        
-                        try:
-                            data = json.loads(line[6:])
-                        except json.JSONDecodeError:
-                            continue
-                        
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue
-                        
-                        delta = choices[0].get("delta", {})
-                        content_chunk = delta.get("content", "")
-                        reasoning_chunk = delta.get("reasoning_content", "") or delta.get("thinking", "")
-                        
-                        if content_chunk or reasoning_chunk:
-                            accumulated_content.append(content_chunk)
-                            if reasoning_chunk:
-                                accumulated_reasoning.append(reasoning_chunk)
-                            if on_chunk:
-                                on_chunk(content_chunk, reasoning_chunk)
-                        
-                        if "usage" in data:
-                            total_completion_tokens = data["usage"].get("completion_tokens", 0)
-                            prompt_tokens_from_stream = data["usage"].get("prompt_tokens", 0)
+                    try:
+                        async for line in response.aiter_lines():
+                            if self._cancel_event.is_set():
+                                cancelled = True
+                                break
+                            
+                            if not line.strip() or not line.startswith("data: "):
+                                continue
+                            
+                            if line.strip() == "data: [DONE]":
+                                done_receiving = True
+                                continue
+                            
+                            try:
+                                data = json.loads(line[6:])
+                            except json.JSONDecodeError:
+                                continue
+                            
+                            choices = data.get("choices", [])
+                            if not choices:
+                                continue
+                            
+                            delta = choices[0].get("delta", {})
+                            content_chunk = delta.get("content", "")
+                            reasoning_chunk = delta.get("reasoning_content", "") or delta.get("thinking", "")
+                            
+                            if content_chunk or reasoning_chunk:
+                                accumulated_content.append(content_chunk)
+                                if reasoning_chunk:
+                                    accumulated_reasoning.append(reasoning_chunk)
+                                if on_chunk:
+                                    on_chunk(content_chunk, reasoning_chunk)
+                            
+                            if "usage" in data:
+                                total_completion_tokens = data["usage"].get("completion_tokens", 0)
+                                prompt_tokens_from_stream = data["usage"].get("prompt_tokens", 0)
+                    finally:
+                        await response.aclose()
                     
                     if cancelled:
-                        await response.aclose()
                         response_time = time.time() - start_time
                         return ModelResponse(
                             content="".join(accumulated_content),
@@ -345,7 +357,20 @@ class LLMAPIClient:
                             error="Cancelled",
                         )
 
-            response_time = time.time() - start_time
+                    if not done_receiving:
+                        return ModelResponse(
+                            content="".join(accumulated_content),
+                            prompt_tokens=prompt_tokens_from_stream,
+                            completion_tokens=total_completion_tokens,
+                            total_tokens=prompt_tokens_from_stream + total_completion_tokens,
+                            response_time=time.time() - start_time,
+                            raw_request=request_data,
+                            raw_response={},
+                            reasoning="".join(accumulated_reasoning) if accumulated_reasoning else None,
+                            error="Stream ended unexpectedly",
+                        )
+
+                    response_time = time.time() - start_time
 
             return ModelResponse(
                 content="".join(accumulated_content),
