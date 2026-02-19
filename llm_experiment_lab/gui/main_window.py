@@ -21,6 +21,7 @@ from .model_panel import ModelPanel
 from .prompts_area import PromptsArea
 from .eval_area import EvalArea
 from .settings_dialog import SettingsDialog
+from .eval_settings_dialog import EvalSettingsDialog
 from .experiment_dialog import SaveExperimentDialog, LoadExperimentDialog, NotesEditorDialog
 
 
@@ -67,24 +68,28 @@ class MainWindow(QMainWindow):
 
     def _default_settings(self):
         return {
-            "api": {
-                "api_key": "",
-                "base_url": "https://api.openai.com/v1",
-                "verify_ssl": True,
-            },
+            "endpoints": [
+                {
+                    "id": "default",
+                    "name": "OpenAI",
+                    "url": "https://api.openai.com/v1",
+                    "api_key": "",
+                }
+            ],
+            "default_endpoint_id": "default",
             "execution": {
                 "mode": "parallel",
                 "delay_seconds": 1,
             },
             "eval_model": {
                 "name": "gpt-4",
-                "custom_endpoint": "",
+                "endpoint_id": "default",
                 "temperature": 0.3,
             },
             "models": [
-                {"name": "gpt-4", "custom_endpoint": "", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
-                {"name": "gpt-3.5-turbo", "custom_endpoint": "", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
-                {"name": "gpt-4o-mini", "custom_endpoint": "", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
+                {"name": "gpt-4", "endpoint_id": "default", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
+                {"name": "gpt-3.5-turbo", "endpoint_id": "default", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
+                {"name": "gpt-4o-mini", "endpoint_id": "default", "temperature": 0.7, "top_p": 1.0, "top_k": -1},
             ],
         }
 
@@ -95,8 +100,7 @@ class MainWindow(QMainWindow):
                 config = panel.get_model_config()
                 model_configs.append({
                     "name": config.name,
-                    "custom_endpoint": config.custom_endpoint,
-                    "custom_api_token": config.custom_api_token,
+                    "endpoint_id": config.endpoint_id,
                     "temperature": config.temperature,
                     "top_p": config.top_p,
                     "top_k": config.top_k,
@@ -108,24 +112,38 @@ class MainWindow(QMainWindow):
                 })
             self.settings["models"] = model_configs
             
-            model_lists = {}
-            api_cfg = self.settings.get("api", {})
-            base_url = api_cfg.get("base_url", "")
+            endpoints = self.settings.get("endpoints", [])
+            default_endpoint_id = self.settings.get("default_endpoint_id", "")
             
+            model_lists = {}
             for panel in self.model_panels:
                 settings = panel.get_custom_settings()
-                endpoint = settings.get("custom_endpoint") or base_url
-                if endpoint not in model_lists:
-                    model_lists[endpoint] = []
+                endpoint_id = settings.get("endpoint_id") or default_endpoint_id
+                
+                endpoint_url = ""
+                for ep in endpoints:
+                    if ep.get("id") == endpoint_id:
+                        endpoint_url = ep.get("url", "")
+                        break
+                
+                if endpoint_url and endpoint_url not in model_lists:
+                    model_lists[endpoint_url] = []
                 current_items = [panel.model_combo.itemText(i) for i in range(panel.model_combo.count())]
                 if current_items and current_items[0]:
-                    model_lists[endpoint] = current_items
+                    if endpoint_url:
+                        model_lists[endpoint_url] = current_items
             
-            if base_url not in model_lists:
-                model_lists[base_url] = []
+            eval_endpoint_id = self.eval_area.get_eval_config().get("endpoint_id", default_endpoint_id)
+            eval_endpoint_url = ""
+            for ep in endpoints:
+                if ep.get("id") == eval_endpoint_id:
+                    eval_endpoint_url = ep.get("url", "")
+                    break
+            
             eval_items = [self.eval_area.eval_model_combo.itemText(i) for i in range(self.eval_area.eval_model_combo.count())]
             if eval_items and eval_items[0]:
-                model_lists[base_url] = eval_items
+                if eval_endpoint_url:
+                    model_lists[eval_endpoint_url] = eval_items
             
             self.settings["model_lists"] = model_lists
             
@@ -134,8 +152,18 @@ class MainWindow(QMainWindow):
                 "user": self.prompts_area.get_user_prompt(),
             }
             
+            eval_config = self.eval_area.get_eval_config()
             self.settings["eval_model"] = {
                 "name": self.eval_area.eval_model_combo.currentText(),
+                "endpoint_id": eval_config.get("endpoint_id", default_endpoint_id),
+                "temperature": self.eval_area.eval_temp_spin.value(),
+                "system_prompt": eval_config.get("system_prompt", ""),
+                "user_prompt_template": eval_config.get("user_prompt_template", ""),
+                "max_tokens": eval_config.get("max_tokens", 0),
+                "stop_sequences": eval_config.get("stop_sequences", []),
+                "frequency_penalty": eval_config.get("frequency_penalty", 0.0),
+                "presence_penalty": eval_config.get("presence_penalty", 0.0),
+                "consider_modifier": eval_config.get("consider_modifier", False),
             }
             
             self.settings["window"] = {
@@ -160,11 +188,21 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", f"Could not save config: {e}")
 
     def _create_client(self):
-        api_cfg = self.settings.get("api", {})
+        endpoints = self.settings.get("endpoints", [])
+        default_endpoint_id = self.settings.get("default_endpoint_id", "")
+        
+        default_endpoint = {}
+        for ep in endpoints:
+            if ep.get("id") == default_endpoint_id:
+                default_endpoint = ep
+                break
+        
         self.client = LLMAPIClient(
-            api_key=api_cfg.get("api_key", ""),
-            base_url=api_cfg.get("base_url", "https://api.openai.com/v1"),
-            verify_ssl=api_cfg.get("verify_ssl", True),
+            api_key=default_endpoint.get("api_key", ""),
+            base_url=default_endpoint.get("url", "https://api.openai.com/v1"),
+            verify_ssl=True,
+            endpoints=endpoints,
+            default_endpoint_id=default_endpoint_id,
         )
         self.experiment = Experiment(self.client)
         self.evaluator = Evaluator(self.client)
@@ -227,7 +265,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.refresh_models_btn)
 
         self.settings_btn = QAction(
-            get_icon(QStyle.StandardPixmap.SP_DesktopIcon), "", self
+            get_icon(QStyle.StandardPixmap.SP_DialogApplyButton), "", self
         )
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.triggered.connect(self._show_settings)
@@ -251,7 +289,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.stop_btn)
 
         self.clear_exp_btn = QAction(
-            get_icon(QStyle.StandardPixmap.SP_TrashIcon), "", self
+            get_icon(QStyle.StandardPixmap.SP_DialogResetButton), "", self
         )
         self.clear_exp_btn.setToolTip("Clear Experiment")
         self.clear_exp_btn.triggered.connect(self._clear_experiment)
@@ -282,6 +320,7 @@ class MainWindow(QMainWindow):
             panel.dropdown_opened.connect(self._on_dropdown_opened)
             panel.run_clicked.connect(lambda idx=i: self._run_single(idx))
             panel.stop_clicked.connect(lambda idx=i: self._stop_model(idx))
+            panel.config_changed.connect(self._on_experiment_changed)
             models_layout.addWidget(panel)
         models_widget.setLayout(models_layout)
         splitter.addWidget(models_widget)
@@ -289,6 +328,7 @@ class MainWindow(QMainWindow):
         self.eval_area = EvalArea()
         self.eval_area.evaluate_clicked.connect(self._run_evaluation)
         self.eval_area.stop_evaluate_clicked.connect(self._stop_evaluation)
+        self.eval_area.settings_clicked.connect(self._on_eval_settings_clicked)
         self.eval_area.set_evaluate_enabled(False)
         splitter.addWidget(self.eval_area)
 
@@ -328,16 +368,23 @@ class MainWindow(QMainWindow):
                 self.prompts_area.set_system_prompt(exp_data.prompts.get("system", ""))
                 self.prompts_area.set_user_prompt(exp_data.prompts.get("user", ""))
                 
-                api_cfg = self.settings.get("api", {})
-                base_url = api_cfg.get("base_url", "")
+                endpoints = self.settings.get("endpoints", [])
+                default_endpoint_id = self.settings.get("default_endpoint_id", "")
                 model_lists = self.settings.get("model_lists", {})
                 
                 saved_models = exp_data.models
                 for i, panel in enumerate(self.model_panels):
                     settings = panel.get_custom_settings()
-                    endpoint = settings.get("custom_endpoint") or base_url
-                    if endpoint in model_lists and model_lists[endpoint]:
-                        panel.set_model_list(model_lists[endpoint])
+                    endpoint_id = settings.get("endpoint_id") or default_endpoint_id
+                    
+                    endpoint_url = ""
+                    for ep in endpoints:
+                        if ep.get("id") == endpoint_id:
+                            endpoint_url = ep.get("url", "")
+                            break
+                    
+                    if endpoint_url in model_lists and model_lists[endpoint_url]:
+                        panel.set_model_list(model_lists[endpoint_url])
                     
                     if i < len(saved_models):
                         model_data = saved_models[i]
@@ -347,8 +394,7 @@ class MainWindow(QMainWindow):
                         panel.top_k_spin.setValue(model_data.get("top_k", -1))
                         panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
                         panel.set_custom_settings({
-                            "custom_endpoint": model_data.get("custom_endpoint", ""),
-                            "custom_api_token": model_data.get("custom_api_token", ""),
+                            "endpoint_id": model_data.get("endpoint_id", ""),
                             "max_tokens": model_data.get("max_tokens", 0),
                             "stop_sequences": model_data.get("stop_sequences", []),
                             "frequency_penalty": model_data.get("frequency_penalty", 0.0),
@@ -411,28 +457,43 @@ class MainWindow(QMainWindow):
                 panel.top_k_spin.setValue(model_data.get("top_k", -1))
                 panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
                 panel.set_custom_settings({
-                    "custom_endpoint": model_data.get("custom_endpoint", ""),
-                    "custom_api_token": model_data.get("custom_api_token", ""),
+                    "endpoint_id": model_data.get("endpoint_id", ""),
                     "max_tokens": model_data.get("max_tokens", 0),
                     "stop_sequences": model_data.get("stop_sequences", []),
                     "frequency_penalty": model_data.get("frequency_penalty", 0.0),
                     "presence_penalty": model_data.get("presence_penalty", 0.0),
                 })
 
-        api_cfg = self.settings.get("api", {})
-        base_url = api_cfg.get("base_url", "")
+        endpoints = self.settings.get("endpoints", [])
+        default_endpoint_id = self.settings.get("default_endpoint_id", "")
         model_lists = self.settings.get("model_lists", {})
         
         for panel in self.model_panels:
             settings = panel.get_custom_settings()
-            endpoint = settings.get("custom_endpoint") or base_url
-            if endpoint in model_lists and model_lists[endpoint]:
-                panel.set_model_list(model_lists[endpoint])
+            endpoint_id = settings.get("endpoint_id") or default_endpoint_id
+            
+            endpoint_url = ""
+            for ep in endpoints:
+                if ep.get("id") == endpoint_id:
+                    endpoint_url = ep.get("url", "")
+                    break
+            
+            if endpoint_url in model_lists and model_lists[endpoint_url]:
+                panel.set_model_list(model_lists[endpoint_url])
         
-        if base_url in model_lists and model_lists[base_url]:
+        saved_eval = self.settings.get("eval_model", {})
+        
+        eval_endpoint_id = saved_eval.get("endpoint_id", default_endpoint_id)
+        eval_endpoint_url = ""
+        for ep in endpoints:
+            if ep.get("id") == eval_endpoint_id:
+                eval_endpoint_url = ep.get("url", "")
+                break
+        
+        if eval_endpoint_url in model_lists and model_lists[eval_endpoint_url]:
             current = self.eval_area.eval_model_combo.currentText()
             self.eval_area.eval_model_combo.clear()
-            sorted_eval_models = sorted(model_lists[base_url])
+            sorted_eval_models = sorted(model_lists[eval_endpoint_url])
             self.eval_area.eval_model_combo.addItems(sorted_eval_models)
             if current in sorted_eval_models:
                 self.eval_area.eval_model_combo.setCurrentText(current)
@@ -446,6 +507,16 @@ class MainWindow(QMainWindow):
         if saved_eval:
             self.eval_area.set_eval_model(saved_eval.get("name", "gpt-4"))
             self.eval_area.eval_temp_spin.setValue(saved_eval.get("temperature", 0.3))
+            self.eval_area.set_eval_settings({
+                "endpoint_id": saved_eval.get("endpoint_id", ""),
+                "system_prompt": saved_eval.get("system_prompt") or self.eval_area.DEFAULT_SYSTEM_PROMPT,
+                "user_prompt_template": saved_eval.get("user_prompt_template") or self.eval_area.DEFAULT_USER_TEMPLATE,
+                "max_tokens": saved_eval.get("max_tokens", 0),
+                "stop_sequences": saved_eval.get("stop_sequences", []),
+                "frequency_penalty": saved_eval.get("frequency_penalty", 0.0),
+                "presence_penalty": saved_eval.get("presence_penalty", 0.0),
+                "consider_modifier": saved_eval.get("consider_modifier", False),
+            })
 
     def _restore_window_state(self):
         window_settings = self.settings.get("window", {})
@@ -573,42 +644,46 @@ class MainWindow(QMainWindow):
                 break
 
     def _refresh_all_models(self):
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
-            self._log("No API key configured")
+        endpoints_config = self.settings.get("endpoints", [])
+        has_api_key = any(ep.get("api_key") for ep in endpoints_config)
+        if not has_api_key:
+            self._log("No API key configured in any endpoint")
             return
 
-        endpoints = set()
-        base_url = api_cfg.get("base_url", "")
-        if base_url:
-            endpoints.add(base_url)
+        endpoints_config = self.settings.get("endpoints", [])
+        endpoint_urls = set()
+        
+        for ep in endpoints_config:
+            url = ep.get("url", "")
+            if url:
+                endpoint_urls.add(url)
 
-        for panel in self.model_panels:
-            settings = panel.get_custom_settings()
-            endpoint = settings.get("custom_endpoint")
-            if endpoint:
-                endpoints.add(endpoint)
+        self._log(f"Refreshing models for {len(endpoint_urls)} endpoints: {endpoint_urls}")
 
-        self._log(f"Refreshing models for {len(endpoints)} endpoints: {endpoints}")
+        for endpoint_url in endpoint_urls:
+            self._refresh_models(endpoint_url)
 
-        for endpoint in endpoints:
-            self._refresh_models(endpoint)
-
-    def _refresh_models(self, endpoint: str = ""):
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
-            self._log("No API key configured")
+    def _refresh_models(self, endpoint_url: str = ""):
+        endpoints_config = self.settings.get("endpoints", [])
+        
+        api_key = ""
+        for ep in endpoints_config:
+            if ep.get("url", "") == endpoint_url:
+                api_key = ep.get("api_key", "")
+                break
+        
+        if not api_key:
+            self._log(f"No API key for endpoint {endpoint_url}")
             return
 
-        base_url = endpoint if endpoint else api_cfg.get("base_url", "")
-        self._log(f"Fetching models from {base_url}/models...")
+        self._log(f"Fetching models from {endpoint_url}/models...")
         
         def fetch_models():
             try:
                 import httpx
-                headers = {"Authorization": f"Bearer {api_cfg.get('api_key', '')}"}
-                with httpx.Client(verify=api_cfg.get("verify_ssl", True), follow_redirects=True) as client:
-                    response = client.get(f"{base_url}/models", headers=headers, timeout=30.0)
+                headers = {"Authorization": f"Bearer {api_key}"}
+                with httpx.Client(verify=True, follow_redirects=True) as client:
+                    response = client.get(f"{endpoint_url}/models", headers=headers, timeout=30.0)
                     self._log(f"Response status: {response.status_code}")
                     self._log(f"Response body: {response.text[:2000]}")
                     
@@ -616,7 +691,7 @@ class MainWindow(QMainWindow):
                         data = response.json()
                         models = [m.get("id") for m in data.get("data", [])]
                         self._log(f"Parsed models: {models}")
-                        self.ui_queue.put({"type": "update_models", "models": models, "endpoint": endpoint})
+                        self.ui_queue.put({"type": "update_models", "models": models, "endpoint": endpoint_url})
                     else:
                         self._log(f"Error: {response.status_code} - {response.text[:500]}")
             except Exception as e:
@@ -627,24 +702,35 @@ class MainWindow(QMainWindow):
         thread = threading.Thread(target=fetch_models)
         thread.start()
 
-    def _update_model_lists(self, models: list, endpoint: str = ""):
+    def _update_model_lists(self, models: list, endpoint_url: str = ""):
         if not models:
             self._log("No models returned from API")
             return
         
-        api_cfg = self.settings.get("api", {})
-        base_url = api_cfg.get("base_url", "")
+        endpoints_config = self.settings.get("endpoints", [])
+        default_endpoint_url = ""
+        for ep in endpoints_config:
+            if ep.get("id") == self.settings.get("default_endpoint_id", ""):
+                default_endpoint_url = ep.get("url", "")
+                break
         
-        is_default_endpoint = endpoint == base_url
+        is_default_endpoint = endpoint_url == default_endpoint_url
         
         updated = False
         
         for i, panel in enumerate(self.model_panels):
             settings = panel.get_custom_settings()
-            panel_endpoint = settings.get("custom_endpoint", "")
+            panel_endpoint_id = settings.get("endpoint_id", "")
+            
+            panel_endpoint_url = ""
+            for ep in endpoints_config:
+                if ep.get("id") == panel_endpoint_id:
+                    panel_endpoint_url = ep.get("url", "")
+                    break
+            
             should_update = (
-                (endpoint and panel_endpoint == endpoint) or
-                (is_default_endpoint and not panel_endpoint)
+                (endpoint_url and panel_endpoint_url == endpoint_url) or
+                (is_default_endpoint and not panel_endpoint_url)
             )
             if should_update:
                 panel.set_model_list(models)
@@ -664,8 +750,9 @@ class MainWindow(QMainWindow):
             self._log(f"Loaded {len(models)} models from API")
 
     def _on_dropdown_opened(self):
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
+        endpoints = self.settings.get("endpoints", [])
+        has_api_key = any(ep.get("api_key") for ep in endpoints)
+        if not has_api_key:
             return
         self._refresh_models()
 
@@ -680,8 +767,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please enter at least one prompt")
             return
 
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
+        endpoints = self.settings.get("endpoints", [])
+        has_api_key = any(ep.get("api_key") for ep in endpoints)
+        if not has_api_key:
             QMessageBox.warning(self, "Warning", "Please set API key in Settings")
             return
 
@@ -804,8 +892,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please enter at least one prompt")
             return
 
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
+        endpoints = self.settings.get("endpoints", [])
+        has_api_key = any(ep.get("api_key") for ep in endpoints)
+        if not has_api_key:
             QMessageBox.warning(self, "Warning", "Please set API key in Settings")
             return
 
@@ -853,11 +942,9 @@ class MainWindow(QMainWindow):
             self._log(f"Execution mode: {mode}")
             
             for i, config in enumerate(model_configs):
-                endpoint = config.custom_endpoint if config.custom_endpoint else "default"
-                token_info = "default" if not config.custom_api_token else "custom (set)"
+                endpoint_id = config.endpoint_id if config.endpoint_id else "default"
                 self._log(f"--- Model {i+1}: {config.name} ---")
-                self._log(f"    Endpoint: {endpoint}")
-                self._log(f"    API Token: {token_info}")
+                self._log(f"    Endpoint ID: {endpoint_id}")
                 
                 req_json = {
                     "model": config.name,
@@ -1073,6 +1160,17 @@ class MainWindow(QMainWindow):
             eval_cfg = self.settings.get("eval_model", {})
             self.eval_area.set_eval_model(eval_cfg.get("name", "gpt-4"))
 
+    def _on_eval_settings_clicked(self):
+        endpoints = self.settings.get("endpoints", [])
+        current_settings = self.eval_area.get_eval_config()
+        
+        dialog = EvalSettingsDialog(self, endpoints=endpoints)
+        dialog.set_settings(current_settings)
+        
+        if dialog.exec():
+            new_settings = dialog.get_settings()
+            self.eval_area.set_eval_settings(new_settings)
+
     def _run_evaluation(self):
         if not self.model_responses:
             QMessageBox.warning(self, "Warning", "No model responses to evaluate")
@@ -1083,8 +1181,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please select an evaluation model")
             return
 
-        api_cfg = self.settings.get("api", {})
-        if not api_cfg.get("api_key"):
+        endpoints = self.settings.get("endpoints", [])
+        has_api_key = any(ep.get("api_key") for ep in endpoints)
+        if not has_api_key:
             QMessageBox.warning(self, "Warning", "Please set API key in Settings")
             return
 
@@ -1097,9 +1196,15 @@ class MainWindow(QMainWindow):
             if stat and stat.error:
                 self._log(f"Skipping model {resp['model']} due to error: {stat.error}")
                 continue
+            
+            prompt_modifier = ""
+            if idx < len(self.model_panels):
+                prompt_modifier = self.model_panels[idx].get_prompt_modifier()
+            
             resp_with_stats = {
                 "model": resp["model"],
                 "content": resp["content"],
+                "prompt_modifier": prompt_modifier,
                 "stats": {
                     "response_time": stat.response_time if stat else 0,
                     "prompt_tokens": stat.prompt_tokens if stat else 0,
@@ -1147,7 +1252,10 @@ class MainWindow(QMainWindow):
                         user_prompt=user_prompt,
                         responses=responses,
                         temperature=eval_config.get("temperature", 0.3),
-                        eval_system_prompt=eval_system_prompt,
+                        eval_system_prompt=eval_config.get("system_prompt", ""),
+                        endpoint_id=eval_config.get("endpoint_id", ""),
+                        user_prompt_template=eval_config.get("user_prompt_template", ""),
+                        consider_modifier=eval_config.get("consider_modifier", False),
                         on_chunk=on_chunk,
                     )
                 )
@@ -1229,8 +1337,7 @@ class MainWindow(QMainWindow):
             config = panel.get_model_config()
             model_configs.append({
                 "name": config.name,
-                "custom_endpoint": config.custom_endpoint,
-                "custom_api_token": config.custom_api_token,
+                "endpoint_id": config.endpoint_id,
                 "temperature": config.temperature,
                 "top_p": config.top_p,
                 "top_k": config.top_k,
@@ -1295,16 +1402,23 @@ class MainWindow(QMainWindow):
                 self.prompts_area.set_system_prompt(exp_data.prompts.get("system", ""))
                 self.prompts_area.set_user_prompt(exp_data.prompts.get("user", ""))
                 
-                api_cfg = self.settings.get("api", {})
-                base_url = api_cfg.get("base_url", "")
+                endpoints = self.settings.get("endpoints", [])
+                default_endpoint_id = self.settings.get("default_endpoint_id", "")
                 model_lists = self.settings.get("model_lists", {})
                 
                 saved_models = exp_data.models
                 for i, panel in enumerate(self.model_panels):
                     settings = panel.get_custom_settings()
-                    endpoint = settings.get("custom_endpoint") or base_url
-                    if endpoint in model_lists and model_lists[endpoint]:
-                        panel.set_model_list(model_lists[endpoint])
+                    endpoint_id = settings.get("endpoint_id") or default_endpoint_id
+                    
+                    endpoint_url = ""
+                    for ep in endpoints:
+                        if ep.get("id") == endpoint_id:
+                            endpoint_url = ep.get("url", "")
+                            break
+                    
+                    if endpoint_url in model_lists and model_lists[endpoint_url]:
+                        panel.set_model_list(model_lists[endpoint_url])
                     
                     if i < len(saved_models):
                         model_data = saved_models[i]
@@ -1314,8 +1428,7 @@ class MainWindow(QMainWindow):
                         panel.top_k_spin.setValue(model_data.get("top_k", -1))
                         panel.set_prompt_modifier(model_data.get("prompt_modifier", ""))
                         panel.set_custom_settings({
-                            "custom_endpoint": model_data.get("custom_endpoint", ""),
-                            "custom_api_token": model_data.get("custom_api_token", ""),
+                            "endpoint_id": model_data.get("endpoint_id", ""),
                             "max_tokens": model_data.get("max_tokens", 0),
                             "stop_sequences": model_data.get("stop_sequences", []),
                             "frequency_penalty": model_data.get("frequency_penalty", 0.0),
@@ -1324,6 +1437,18 @@ class MainWindow(QMainWindow):
                 
                 self.settings["execution"] = exp_data.execution
                 self.settings["eval_model"] = exp_data.eval_model
+                
+                if exp_data.eval_model:
+                    if not exp_data.eval_model.get("system_prompt"):
+                        exp_data.eval_model["system_prompt"] = self.eval_area.DEFAULT_SYSTEM_PROMPT
+                    if not exp_data.eval_model.get("user_prompt_template"):
+                        exp_data.eval_model["user_prompt_template"] = self.eval_area.DEFAULT_USER_TEMPLATE
+                    if "consider_modifier" not in exp_data.eval_model:
+                        exp_data.eval_model["consider_modifier"] = False
+                    self.eval_area.set_eval_settings(exp_data.eval_model)
+                    self.eval_area.set_eval_model(exp_data.eval_model.get("name", "gpt-4"))
+                    if "temperature" in exp_data.eval_model:
+                        self.eval_area.eval_temp_spin.setValue(exp_data.eval_model.get("temperature", 0.3))
                 
                 self.model_responses = exp_data.model_responses or {}
                 self.model_stats = exp_data.model_stats or {}
@@ -1413,8 +1538,7 @@ class MainWindow(QMainWindow):
             panel.top_k_spin.setValue(-1)
             panel.set_prompt_modifier("")
             panel.set_custom_settings({
-                "custom_endpoint": "",
-                "custom_api_token": "",
+                "endpoint_id": "",
                 "max_tokens": 0,
                 "stop_sequences": [],
                 "frequency_penalty": 0.0,
