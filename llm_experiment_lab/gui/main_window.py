@@ -7,7 +7,7 @@ from functools import partial
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QSplitter,
-    QStatusBar, QTextEdit, QLabel, QToolBar,
+    QStatusBar, QTextEdit, QLabel, QToolBar, QStyle,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QSize
 from PyQt6.QtGui import QAction, QIcon
@@ -186,40 +186,24 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(toolbar)
 
-        def make_icon(symbol: str) -> QIcon:
-            icons = {
-                "play": "▶",
-                "stop": "■",
-                "refresh": "↻",
-                "settings": "⚙",
-                "save": "💾",
-                "open": "📂",
-                "notes": "📝",
-                "clear": "✕",
-            }
-            from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
-            icon = QIcon()
-            pixmap = QPixmap(24, 24)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setPen(QColor(255, 255, 255))
-            font = QFont()
-            font.setPixelSize(18)
-            painter.setFont(font)
-            painter.drawText(pixmap.rect(), 0x0084, icons.get(symbol, ""))
-            painter.end()
-            icon.addPixmap(pixmap)
-            return icon
+        app = None
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        
+        def get_icon(pixmap_enum):
+            if app:
+                return app.style().standardIcon(pixmap_enum)
+            return QIcon()
 
         self.load_exp_btn = QAction(
-            make_icon("open"), "", self
+            get_icon(QStyle.StandardPixmap.SP_DialogOpenButton), "", self
         )
         self.load_exp_btn.setToolTip("Load Experiment")
         self.load_exp_btn.triggered.connect(self._load_experiment)
         toolbar.addAction(self.load_exp_btn)
 
         self.save_exp_btn = QAction(
-            make_icon("save"), "", self
+            get_icon(QStyle.StandardPixmap.SP_DialogSaveButton), "", self
         )
         self.save_exp_btn.setToolTip("Save Experiment")
         self.save_exp_btn.setEnabled(False)
@@ -227,7 +211,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.save_exp_btn)
 
         self.save_as_exp_btn = QAction(
-            make_icon("save"), "", self
+            get_icon(QStyle.StandardPixmap.SP_DialogSaveButton), "", self
         )
         self.save_as_exp_btn.setToolTip("Save As...")
         self.save_as_exp_btn.triggered.connect(self._save_experiment_as)
@@ -236,14 +220,14 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         self.refresh_models_btn = QAction(
-            make_icon("refresh"), "", self
+            get_icon(QStyle.StandardPixmap.SP_BrowserReload), "", self
         )
         self.refresh_models_btn.setToolTip("Refresh Models")
         self.refresh_models_btn.triggered.connect(self._refresh_all_models)
         toolbar.addAction(self.refresh_models_btn)
 
         self.settings_btn = QAction(
-            make_icon("settings"), "", self
+            get_icon(QStyle.StandardPixmap.SP_DesktopIcon), "", self
         )
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.triggered.connect(self._show_settings)
@@ -252,14 +236,14 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         self.run_btn = QAction(
-            make_icon("play"), "", self
+            get_icon(QStyle.StandardPixmap.SP_MediaPlay), "", self
         )
         self.run_btn.setToolTip("Run All")
         self.run_btn.triggered.connect(self._run_all)
         toolbar.addAction(self.run_btn)
 
         self.stop_btn = QAction(
-            make_icon("stop"), "", self
+            get_icon(QStyle.StandardPixmap.SP_MediaStop), "", self
         )
         self.stop_btn.setToolTip("Stop")
         self.stop_btn.setEnabled(False)
@@ -267,14 +251,14 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.stop_btn)
 
         self.clear_exp_btn = QAction(
-            make_icon("clear"), "", self
+            get_icon(QStyle.StandardPixmap.SP_TrashIcon), "", self
         )
         self.clear_exp_btn.setToolTip("Clear Experiment")
         self.clear_exp_btn.triggered.connect(self._clear_experiment)
         toolbar.addAction(self.clear_exp_btn)
 
         self.notes_btn = QAction(
-            make_icon("notes"), "", self
+            get_icon(QStyle.StandardPixmap.SP_FileIcon), "", self
         )
         self.notes_btn.setToolTip("Edit Notes")
         self.notes_btn.triggered.connect(self._edit_notes)
