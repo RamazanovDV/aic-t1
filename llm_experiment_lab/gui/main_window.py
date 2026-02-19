@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QSize
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QStyle
 
 from ..api.client import LLMAPIClient
 from ..core.experiment import Experiment
@@ -187,19 +186,52 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(toolbar)
 
-        style = self.style()
+        from PyQt6.QtGui import QPainter, QPixmap, QPen, QColor, QPointF
+
+        def make_icon(symbol: str) -> QIcon:
+            pixmap = QPixmap(24, 24)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            if symbol == "play":
+                painter.drawPolygon([QPointF(6, 4), QPointF(6, 20), QPointF(20, 12)])
+            elif symbol == "stop":
+                painter.drawRect(6, 6, 12, 12)
+            elif symbol == "refresh":
+                painter.drawEllipse(12, 12, 8, 8)
+                painter.drawLine(12, 4, 12, 2)
+                painter.drawLine(12, 20, 12, 22)
+                painter.drawLine(4, 12, 2, 12)
+                painter.drawLine(20, 12, 22, 12)
+            elif symbol == "settings":
+                painter.drawEllipse(12, 12, 10, 10)
+                painter.drawEllipse(12, 12, 4, 4)
+            elif symbol == "save":
+                painter.drawRect(4, 2, 16, 14)
+                painter.drawRect(8, 6, 8, 10)
+            elif symbol == "open":
+                painter.drawRect(4, 6, 16, 14)
+                painter.drawLine(12, 2, 12, 6)
+            elif symbol == "notes":
+                painter.drawRect(4, 2, 16, 20)
+                painter.drawLine(8, 8, 16, 8)
+                painter.drawLine(8, 12, 16, 12)
+                painter.drawLine(8, 16, 14, 16)
+            elif symbol == "clear":
+                painter.drawLine(4, 4, 20, 20)
+                painter.drawLine(20, 4, 4, 20)
+            painter.end()
+            return QIcon(pixmap)
 
         self.run_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_MediaPlay)),
-            "", self
+            make_icon("play"), "", self
         )
         self.run_btn.setToolTip("Run All")
         self.run_btn.triggered.connect(self._run_all)
         toolbar.addAction(self.run_btn)
 
         self.stop_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_MediaStop)),
-            "", self
+            make_icon("stop"), "", self
         )
         self.stop_btn.setToolTip("Stop")
         self.stop_btn.setEnabled(False)
@@ -209,16 +241,14 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         self.refresh_models_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_BrowserReload)),
-            "", self
+            make_icon("refresh"), "", self
         )
         self.refresh_models_btn.setToolTip("Refresh Models")
         self.refresh_models_btn.triggered.connect(self._refresh_all_models)
         toolbar.addAction(self.refresh_models_btn)
 
         self.settings_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_DesktopIcon)),
-            "", self
+            make_icon("settings"), "", self
         )
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.triggered.connect(self._show_settings)
@@ -227,40 +257,35 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         self.save_exp_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_DialogSaveButton)),
-            "", self
+            make_icon("save"), "", self
         )
         self.save_exp_btn.setToolTip("Save Experiment")
         self.save_exp_btn.triggered.connect(self._save_experiment)
         toolbar.addAction(self.save_exp_btn)
 
         self.save_as_exp_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_DialogSaveButton)),
-            "", self
+            make_icon("save"), "", self
         )
         self.save_as_exp_btn.setToolTip("Save As...")
         self.save_as_exp_btn.triggered.connect(self._save_experiment_as)
         toolbar.addAction(self.save_as_exp_btn)
 
         self.load_exp_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_DialogOpenButton)),
-            "", self
+            make_icon("open"), "", self
         )
         self.load_exp_btn.setToolTip("Load Experiment")
         self.load_exp_btn.triggered.connect(self._load_experiment)
         toolbar.addAction(self.load_exp_btn)
 
         self.notes_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_FileIcon)),
-            "", self
+            make_icon("notes"), "", self
         )
         self.notes_btn.setToolTip("Edit Notes")
         self.notes_btn.triggered.connect(self._edit_notes)
         toolbar.addAction(self.notes_btn)
 
         self.clear_exp_btn = QAction(
-            QIcon(style.standardIcon(QStyle.SP_DialogDiscardButton)),
-            "", self
+            make_icon("clear"), "", self
         )
         self.clear_exp_btn.setToolTip("Clear Experiment")
         self.clear_exp_btn.triggered.connect(self._clear_experiment)
