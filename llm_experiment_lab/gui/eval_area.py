@@ -6,7 +6,7 @@ import mistune
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QDoubleSpinBox, QTextEdit,
-    QGroupBox, QPushButton,
+    QGroupBox, QPushButton, QCheckBox,
 )
 from typing import Optional
 from PyQt6.QtCore import pyqtSignal
@@ -40,8 +40,28 @@ class StatusIndicator(QLabel):
 class EvalArea(QWidget):
     evaluate_clicked = pyqtSignal()
     stop_evaluate_clicked = pyqtSignal()
+    settings_clicked = pyqtSignal()
 
     DEFAULT_EVAL_MODELS = []
+    
+    DEFAULT_SYSTEM_PROMPT = "You are an expert evaluator. Compare LLM responses and provide fair, objective analysis. Always respond in Russian."
+    
+    DEFAULT_USER_TEMPLATE = """Сравните следующие ответы на один и тот же запрос и предоставьте рейтинг от лучшего к худшему с краткими пояснениями. Отвечайте на русском языке.
+
+Системный промпт: {system_prompt}
+
+Пользовательский промпт: {user_prompt}
+
+---
+Ответы моделей:
+{responses}
+
+---
+Предоставьте:
+1. Рейтинг от лучшего (1-е место) к худшему
+2. Краткое пояснение для каждого места
+3. Ключевые сильные и слабые стороны каждого ответа
+4. Учтите при оценке скорость ответа и количество затраченных токенов"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +69,15 @@ class EvalArea(QWidget):
         self.eval_response_json = None
         self._is_running = False
         self._init_ui()
+        
+        self._endpoint_id = ""
+        self._system_prompt = self.DEFAULT_SYSTEM_PROMPT
+        self._user_prompt_template = self.DEFAULT_USER_TEMPLATE
+        self._max_tokens = 0
+        self._stop_sequences = []
+        self._frequency_penalty = 0.0
+        self._presence_penalty = 0.0
+        self._consider_modifier = False
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -73,6 +102,15 @@ class EvalArea(QWidget):
         self.eval_temp_spin.setValue(0.3)
         settings_layout.addWidget(temp_label)
         settings_layout.addWidget(self.eval_temp_spin)
+
+        self.settings_btn = QPushButton("Settings")
+        self.settings_btn.clicked.connect(self.settings_clicked.emit)
+        settings_layout.addWidget(self.settings_btn)
+
+        self.consider_modifier_check = QCheckBox("Учитывать модификатор")
+        self.consider_modifier_check.setToolTip("Включить в оценку информацию о дополнительном промпте модели")
+        self.consider_modifier_check.setChecked(False)
+        settings_layout.addWidget(self.consider_modifier_check)
 
         self.evaluate_btn = QPushButton("Run Evaluation")
         self.evaluate_btn.clicked.connect(self._on_evaluate_btn_clicked)
@@ -136,7 +174,26 @@ class EvalArea(QWidget):
         return {
             "model": self.eval_model_combo.currentText(),
             "temperature": self.eval_temp_spin.value(),
+            "endpoint_id": getattr(self, "_endpoint_id", ""),
+            "system_prompt": getattr(self, "_system_prompt", ""),
+            "user_prompt_template": getattr(self, "_user_prompt_template", ""),
+            "max_tokens": getattr(self, "_max_tokens", 0),
+            "stop_sequences": getattr(self, "_stop_sequences", []),
+            "frequency_penalty": getattr(self, "_frequency_penalty", 0.0),
+            "presence_penalty": getattr(self, "_presence_penalty", 0.0),
+            "consider_modifier": self.consider_modifier_check.isChecked(),
         }
+
+    def set_eval_settings(self, settings: dict):
+        self._endpoint_id = settings.get("endpoint_id", "")
+        self._system_prompt = settings.get("system_prompt", "")
+        self._user_prompt_template = settings.get("user_prompt_template", "")
+        self._max_tokens = settings.get("max_tokens", 0)
+        self._stop_sequences = settings.get("stop_sequences", [])
+        self._frequency_penalty = settings.get("frequency_penalty", 0.0)
+        self._presence_penalty = settings.get("presence_penalty", 0.0)
+        self._consider_modifier = settings.get("consider_modifier", False)
+        self.consider_modifier_check.setChecked(self._consider_modifier)
 
     def set_eval_model(self, model_name: str):
         idx = self.eval_model_combo.findText(model_name)

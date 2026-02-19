@@ -24,9 +24,12 @@ class Evaluator:
         responses: List[dict],
         temperature: float = 0.3,
         eval_system_prompt: str = "",
+        endpoint_id: str = "",
+        user_prompt_template: str = "",
+        consider_modifier: bool = False,
     ) -> tuple[str, ModelResponse]:
         eval_prompt = self._build_eval_prompt(
-            system_prompt, user_prompt, responses
+            system_prompt, user_prompt, responses, user_prompt_template, consider_modifier
         )
 
         final_system_prompt = eval_system_prompt if eval_system_prompt else self.DEFAULT_SYSTEM_PROMPT
@@ -38,6 +41,7 @@ class Evaluator:
             temperature=temperature,
             top_p=1.0,
             top_k=-1,
+            endpoint_id=endpoint_id,
         )
 
         return result.content if not result.error else f"Error: {result.error}", result
@@ -50,10 +54,13 @@ class Evaluator:
         responses: List[dict],
         temperature: float = 0.3,
         eval_system_prompt: str = "",
+        endpoint_id: str = "",
+        user_prompt_template: str = "",
+        consider_modifier: bool = False,
         on_chunk: Optional[Callable[[str, str], None]] = None,
     ) -> tuple[str, ModelResponse]:
         eval_prompt = self._build_eval_prompt(
-            system_prompt, user_prompt, responses
+            system_prompt, user_prompt, responses, user_prompt_template, consider_modifier
         )
 
         final_system_prompt = eval_system_prompt if eval_system_prompt else self.DEFAULT_SYSTEM_PROMPT
@@ -67,6 +74,7 @@ class Evaluator:
             temperature=temperature,
             top_p=1.0,
             top_k=-1,
+            endpoint_id=endpoint_id,
             on_chunk=on_chunk,
         )
 
@@ -77,7 +85,31 @@ class Evaluator:
         system_prompt: str,
         user_prompt: str,
         responses: List[dict],
+        user_prompt_template: str = "",
+        consider_modifier: bool = False,
     ) -> str:
+        if user_prompt_template:
+            responses_text = ""
+            for i, resp in enumerate(responses, 1):
+                if resp.get("content"):
+                    model_name = resp.get("model", "Unknown")
+                    content = resp["content"]
+                    stats = resp.get("stats", {})
+                    time_val = stats.get("response_time", 0)
+                    total_tokens = stats.get("total_tokens", 0)
+                    
+                    modifier_info = ""
+                    if consider_modifier and resp.get("prompt_modifier"):
+                        modifier_info = f"\nДополнительный промпт модели: {resp['prompt_modifier']}"
+                    
+                    responses_text += f"Ответ {i} (модель: {model_name}, время: {time_val:.2f}с, токены: {total_tokens}){modifier_info}:\n{content}\n\n"
+            
+            return user_prompt_template.format(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                responses=responses_text,
+            )
+        
         prompt = f"""Сравните следующие ответы на один и тот же запрос и предоставьте рейтинг от лучшего к худшему с краткими пояснениями.
 
 Системный промпт: {system_prompt}
@@ -93,7 +125,12 @@ class Evaluator:
                 stats = resp.get("stats", {})
                 time_val = stats.get("response_time", 0)
                 total_tokens = stats.get("total_tokens", 0)
-                prompt += f"Ответ {i} (модель: {model_name}, время: {time_val:.2f}с, токены: {total_tokens}):\n{content}\n\n"
+                
+                modifier_info = ""
+                if consider_modifier and resp.get("prompt_modifier"):
+                    modifier_info = f"\nДополнительный промпт модели: {resp['prompt_modifier']}"
+                
+                prompt += f"Ответ {i} (модель: {model_name}, время: {time_val:.2f}с, токены: {total_tokens}){modifier_info}:\n{content}\n\n"
 
         prompt += """Предоставьте:
 1. Рейтинг от лучшего (1-е место) к худшему (3-е место)

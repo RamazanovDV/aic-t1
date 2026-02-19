@@ -1,16 +1,17 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLabel,
     QLineEdit, QSpinBox, QDoubleSpinBox,
-    QDialogButtonBox, QGroupBox,
+    QDialogButtonBox, QGroupBox, QComboBox,
 )
 from PyQt6.QtCore import Qt
 
 
 class ModelSettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, endpoints: list = None):
         super().__init__(parent)
         self.setWindowTitle("Model Settings")
         self.setMinimumWidth(400)
+        self.endpoints = endpoints or []
         self._init_ui()
 
     def _init_ui(self):
@@ -19,16 +20,11 @@ class ModelSettingsDialog(QDialog):
         api_group = QGroupBox("API Settings")
         api_layout = QFormLayout()
 
-        self.endpoint_edit = QLineEdit()
-        self.endpoint_edit.setPlaceholderText("Leave empty to use global Base URL...")
-        self.endpoint_edit.setToolTip("Custom endpoint for this model (leave empty to use global Base URL)")
-        api_layout.addRow("Endpoint:", self.endpoint_edit)
-
-        self.api_token_edit = QLineEdit()
-        self.api_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_token_edit.setPlaceholderText("Leave empty to use global API key...")
-        self.api_token_edit.setToolTip("Custom API token for this model (leave empty to use global API key)")
-        api_layout.addRow("API Token:", self.api_token_edit)
+        self.endpoint_combo = QComboBox()
+        self.endpoint_combo.addItem("(Default)", "")
+        for ep in self.endpoints:
+            self.endpoint_combo.addItem(ep.get("name", "Unnamed"), ep.get("id", ""))
+        api_layout.addRow("Endpoint:", self.endpoint_combo)
 
         api_group.setLayout(api_layout)
         layout.addWidget(api_group)
@@ -76,9 +72,9 @@ class ModelSettingsDialog(QDialog):
     def get_settings(self) -> dict:
         stop_text = self.stop_sequences_edit.text().strip()
         stop_sequences = [s.strip() for s in stop_text.split(",") if s.strip()]
+        endpoint_id = self.endpoint_combo.currentData()
         return {
-            "custom_endpoint": self.endpoint_edit.text().strip(),
-            "custom_api_token": self.api_token_edit.text().strip(),
+            "endpoint_id": endpoint_id if endpoint_id else "",
             "max_tokens": self.max_tokens_spin.value(),
             "stop_sequences": stop_sequences,
             "frequency_penalty": self.frequency_penalty_spin.value(),
@@ -86,8 +82,16 @@ class ModelSettingsDialog(QDialog):
         }
 
     def set_settings(self, settings: dict):
-        self.endpoint_edit.setText(settings.get("custom_endpoint", ""))
-        self.api_token_edit.setText(settings.get("custom_api_token", ""))
+        endpoint_id = settings.get("endpoint_id", "")
+        found = False
+        for i in range(self.endpoint_combo.count()):
+            if self.endpoint_combo.itemData(i) == endpoint_id:
+                self.endpoint_combo.setCurrentIndex(i)
+                found = True
+                break
+        if not found:
+            self.endpoint_combo.setCurrentIndex(0)
+        
         self.max_tokens_spin.setValue(settings.get("max_tokens", 0))
         stop_sequences = settings.get("stop_sequences", [])
         if stop_sequences:

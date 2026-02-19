@@ -9,8 +9,7 @@ from ..core.statistics import ModelStats
 @dataclass
 class ModelConfig:
     name: str
-    custom_endpoint: str = ""
-    custom_api_token: str = ""
+    endpoint_id: str = ""
     temperature: float = 0.7
     top_p: float = 1.0
     top_k: int = -1
@@ -147,8 +146,7 @@ class Experiment:
                 model.temperature,
                 model.top_p,
                 model.top_k,
-                model.custom_endpoint,
-                model.custom_api_token,
+                model.endpoint_id,
                 stop=model.stop_sequences if model.stop_sequences else None,
                 max_tokens=model.max_tokens or 0,
                 frequency_penalty=model.frequency_penalty,
@@ -163,8 +161,7 @@ class Experiment:
                 model.temperature,
                 model.top_p,
                 model.top_k,
-                model.custom_endpoint,
-                model.custom_api_token,
+                model.endpoint_id,
                 stop=model.stop_sequences if model.stop_sequences else None,
                 max_tokens=model.max_tokens or 0,
                 frequency_penalty=model.frequency_penalty,
@@ -210,5 +207,5 @@ class Experiment:
             temperature=model.temperature,
             top_p=model.top_p,
             top_k=model.top_k,
-            custom_endpoint=model.custom_endpoint,
+            endpoint_id=model.endpoint_id,
         )

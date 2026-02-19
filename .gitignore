@@ -38,5 +38,4 @@ env/
 Thumbs.db
 
 # Project
-config.json
 *.log
