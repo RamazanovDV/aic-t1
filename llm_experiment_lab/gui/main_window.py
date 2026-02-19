@@ -1234,6 +1234,18 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Experiment saved: {name}")
 
     def _load_experiment(self):
+        if self.current_experiment_id and self._is_modified:
+            reply = QMessageBox.question(
+                self,
+                "Save Changes",
+                "You have unsaved changes. Save before loading another experiment?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
+            )
+            if reply == QMessageBox.StandardButton.Save:
+                self._save_experiment()
+            elif reply == QMessageBox.StandardButton.Cancel:
+                return
+        
         dialog = LoadExperimentDialog(self)
         if dialog.exec():
             exp_data = dialog.get_selected_data()
