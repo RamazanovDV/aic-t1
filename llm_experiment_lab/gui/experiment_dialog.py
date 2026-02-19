@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import mistune
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
     QPushButton, QLabel, QLineEdit, QTextEdit,
@@ -7,7 +9,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor
-from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from ..core.experiment_storage import (
     list_experiments,
@@ -18,70 +19,52 @@ from ..core.experiment_storage import (
 
 
 def _render_markdown(text: str) -> str:
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if not text:
+        return ""
     
-    import re
+    md = mistune.create_markdown(plugins=['table', 'strikethrough', 'url'])
     
-    text = re.sub(r"^### (.+)$", r"<h3>\1</h3>", text, flags=re.MULTILINE)
-    text = re.sub(r"^## (.+)$", r"<h2>\1</h2>", text, flags=re.MULTILINE)
-    text = re.sub(r"^# (.+)$", r"<h1>\1</h1>", text, flags=re.MULTILINE)
+    html = md(text)
     
-    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", text)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-    text = re.sub(r"__(.+?)__", r"<strong>\1</strong>", text)
-    text = re.sub(r"_(.+?)_", r"<em>\1</em>", text)
+    style = """
+    <style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        line-height: 1.0;
+        color: #e0e0e0;
+        background-color: #2b2b2b;
+        padding: 10px;
+    }
+    pre {
+        background-color: #1e1e1e;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 10px;
+        overflow-x: auto;
+    }
+    code {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 12px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff;
+        border-bottom: 1px solid #444;
+        padding-bottom: 5px;
+    }
+    blockquote {
+        border-left: 4px solid #666;
+        margin-left: 0;
+        padding-left: 15px;
+        color: #aaa;
+    }
+    a { color: #6cb6ff; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #444; padding: 8px; }
+    </style>
+    """
     
-    text = re.sub(r"```(\w*)\n(.*?)```", r"<pre><code class=\1>\2</code></pre>", text, flags=re.DOTALL)
-    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
-    
-    text = re.sub(r"^\- (.+)$", r"<li>\1</li>", text, flags=re.MULTILINE)
-    text = re.sub(r"^\* (.+)$", r"<li>\1</li>", text, flags=re.MULTILINE)
-    text = re.sub(r"^(\d+)\. (.+)$", r"<li>\2</li>", text, flags=re.MULTILINE)
-    
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
-    
-    text = re.sub(r"\n\n+", "</p><p>", text)
-    
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<style>
-body {{
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-    padding: 20px;
-    background-color: #1e1e1e;
-    color: #d4d4d4;
-}}
-h1, h2, h3 {{ color: #569cd6; }}
-code {{
-    background-color: #2d2d2d;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: 'Consolas', 'Monaco', monospace;
-}}
-pre {{
-    background-color: #2d2d2d;
-    padding: 15px;
-    border-radius: 5px;
-    overflow-x: auto;
-}}
-pre code {{
-    padding: 0;
-}}
-li {{ margin-left: 20px; }}
-a {{ color: #4ec9b0; }}
-strong {{ color: #ce9178; }}
-em {{ color: #9cdcfe; }}
-</style>
-</head>
-<body>
-<p>{text}</p>
-</body>
-</html>"""
-    return html
+    return f"<html><head>{style}</head><body>{html}</body></html>"
 
 
 class SaveExperimentDialog(QDialog):
@@ -243,11 +226,12 @@ class NotesEditorDialog(QDialog):
         self.notes_edit.textChanged.connect(self._on_text_changed)
         edit_layout.addWidget(self.notes_edit)
 
-        self.preview_webview = QWebEngineView()
+        self.preview_edit = QTextEdit()
+        self.preview_edit.setReadOnly(True)
         self._update_preview(initial_notes)
 
         tabs.addTab(self.edit_widget, "Edit")
-        tabs.addTab(self.preview_webview, "Preview")
+        tabs.addTab(self.preview_edit, "Preview")
 
         layout.addWidget(tabs)
         self.tabs = tabs
@@ -275,7 +259,7 @@ class NotesEditorDialog(QDialog):
 
     def _update_preview(self, text: str):
         html = _render_markdown(text)
-        self.preview_webview.setHtml(html)
+        self.preview_edit.setHtml(html)
 
     def get_notes(self) -> str:
         return self.notes_edit.toPlainText()

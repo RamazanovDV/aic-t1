@@ -2,7 +2,6 @@
 import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPalette, QColor
-import PyQt6.QtWebEngineWidgets
 from llm_experiment_lab.gui.main_window import MainWindow
 
 
