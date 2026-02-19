@@ -7,9 +7,11 @@ from functools import partial
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QSplitter,
-    QStatusBar, QTextEdit, QLabel,
+    QStatusBar, QTextEdit, QLabel, QToolBar,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtWidgets import QStyle
 
 from ..api.client import LLMAPIClient
 from ..core.experiment import Experiment
@@ -180,6 +182,92 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        toolbar = QToolBar()
+        toolbar.setMovable(False)
+        toolbar.setIconSize(24)
+        self.addToolBar(toolbar)
+
+        style = self.style()
+
+        self.run_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_MediaPlay)),
+            "", self
+        )
+        self.run_btn.setToolTip("Run All")
+        self.run_btn.triggered.connect(self._run_all)
+        toolbar.addAction(self.run_btn)
+
+        self.stop_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_MediaStop)),
+            "", self
+        )
+        self.stop_btn.setToolTip("Stop")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.triggered.connect(self._stop)
+        toolbar.addAction(self.stop_btn)
+
+        toolbar.addSeparator()
+
+        self.refresh_models_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_BrowserReload)),
+            "", self
+        )
+        self.refresh_models_btn.setToolTip("Refresh Models")
+        self.refresh_models_btn.triggered.connect(self._refresh_all_models)
+        toolbar.addAction(self.refresh_models_btn)
+
+        self.settings_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_DesktopIcon)),
+            "", self
+        )
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.triggered.connect(self._show_settings)
+        toolbar.addAction(self.settings_btn)
+
+        toolbar.addSeparator()
+
+        self.save_exp_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_DialogSaveButton)),
+            "", self
+        )
+        self.save_exp_btn.setToolTip("Save Experiment")
+        self.save_exp_btn.triggered.connect(self._save_experiment)
+        toolbar.addAction(self.save_exp_btn)
+
+        self.save_as_exp_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_DialogSaveButton)),
+            "", self
+        )
+        self.save_as_exp_btn.setToolTip("Save As...")
+        self.save_as_exp_btn.triggered.connect(self._save_experiment_as)
+        toolbar.addAction(self.save_as_exp_btn)
+
+        self.load_exp_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_DialogOpenButton)),
+            "", self
+        )
+        self.load_exp_btn.setToolTip("Load Experiment")
+        self.load_exp_btn.triggered.connect(self._load_experiment)
+        toolbar.addAction(self.load_exp_btn)
+
+        self.notes_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_FileIcon)),
+            "", self
+        )
+        self.notes_btn.setToolTip("Edit Notes")
+        self.notes_btn.triggered.connect(self._edit_notes)
+        toolbar.addAction(self.notes_btn)
+
+        self.clear_exp_btn = QAction(
+            QIcon(style.standardIcon(QStyle.SP_DialogDiscardButton)),
+            "", self
+        )
+        self.clear_exp_btn.setToolTip("Clear Experiment")
+        self.clear_exp_btn.triggered.connect(self._clear_experiment)
+        toolbar.addAction(self.clear_exp_btn)
+
+        toolbar.addSeparator()
+
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.prompts_area = PromptsArea()
@@ -199,53 +287,6 @@ class MainWindow(QMainWindow):
             models_layout.addWidget(panel)
         models_widget.setLayout(models_layout)
         splitter.addWidget(models_widget)
-
-        control_layout = QHBoxLayout()
-        self.run_btn = QPushButton("Run All")
-        self.run_btn.clicked.connect(self._run_all)
-        control_layout.addWidget(self.run_btn)
-
-        self.stop_btn = QPushButton("Stop")
-        self.stop_btn.clicked.connect(self._stop)
-        self.stop_btn.setEnabled(False)
-        control_layout.addWidget(self.stop_btn)
-
-        control_layout.addStretch()
-
-        self.refresh_models_btn = QPushButton("Refresh Models")
-        self.refresh_models_btn.clicked.connect(self._refresh_all_models)
-        control_layout.addWidget(self.refresh_models_btn)
-
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.clicked.connect(self._show_settings)
-        control_layout.addWidget(self.settings_btn)
-
-        control_layout.addStretch()
-
-        self.save_exp_btn = QPushButton("Save Experiment")
-        self.save_exp_btn.clicked.connect(self._save_experiment)
-        control_layout.addWidget(self.save_exp_btn)
-
-        self.save_as_exp_btn = QPushButton("Save As...")
-        self.save_as_exp_btn.clicked.connect(self._save_experiment_as)
-        control_layout.addWidget(self.save_as_exp_btn)
-
-        self.load_exp_btn = QPushButton("Load Experiment")
-        self.load_exp_btn.clicked.connect(self._load_experiment)
-        control_layout.addWidget(self.load_exp_btn)
-
-        self.notes_btn = QPushButton("Edit Notes")
-        self.notes_btn.clicked.connect(self._edit_notes)
-        control_layout.addWidget(self.notes_btn)
-
-        self.clear_exp_btn = QPushButton("Clear Experiment")
-        self.clear_exp_btn.clicked.connect(self._clear_experiment)
-        control_layout.addWidget(self.clear_exp_btn)
-
-        control_widget = QWidget()
-        control_widget.setLayout(control_layout)
-        control_widget.setFixedHeight(50)
-        splitter.addWidget(control_widget)
 
         self.eval_area = EvalArea()
         self.eval_area.evaluate_clicked.connect(self._run_evaluation)
