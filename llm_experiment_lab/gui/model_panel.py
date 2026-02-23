@@ -321,6 +321,7 @@ class ModelPanel(QWidget):
         return f"{html}"
 
     def set_response(self, content: str, stats=None):
+        content, thinking = self._extract_thinking(content)
         html = self._render_markdown(content)
         full_html = f"<html><head>{self._html_style}</head><body>{html}</body></html>"
         self.response_edit.setHtml(full_html)
@@ -329,9 +330,13 @@ class ModelPanel(QWidget):
             self.tokens_label.setText(
                 f"Tokens: {stats.prompt_tokens} + {stats.completion_tokens} = {stats.total_tokens}"
             )
-            if hasattr(stats, 'reasoning') and stats.reasoning:
-                self.reasoning_edit.setPlainText(stats.reasoning)
+            reasoning = thinking or (getattr(stats, 'reasoning', None) if stats else None)
+            if reasoning:
+                self.reasoning_edit.setPlainText(reasoning)
                 self.reasoning_toggle.setVisible(True)
+                self.reasoning_edit.setMaximumHeight(0)
+                self.reasoning_edit.setVisible(False)
+                self.reasoning_toggle.setChecked(False)
             else:
                 self.reasoning_toggle.setVisible(False)
                 self.reasoning_edit.setVisible(False)
@@ -341,24 +346,43 @@ class ModelPanel(QWidget):
 
     def init_response(self):
         self._accumulated_content = ""
+        self._accumulated_reasoning = ""
         empty_html = f"<html><head>{self._html_style}</head><body></body></html>"
         self.response_edit.setHtml(empty_html)
 
+    def _extract_thinking(self, content: str) -> tuple[str, str]:
+        reasoning = ""
+        if "<think>" in content and "</think>" in content:
+            start = content.find("<think>")
+            end = content.find("</think>") + len("</think>")
+            reasoning = content[start:end]
+            content = content[:start] + content[end:]
+        return content, reasoning
+
     def append_response(self, new_content: str):
-        self._accumulated_content += new_content
+        thinking_content, thinking = self._extract_thinking(new_content)
+        if thinking:
+            self.append_reasoning(thinking)
+        self._accumulated_content += thinking_content
         cursor = self.response_edit.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
-        cursor.insertText(new_content)
+        cursor.insertText(thinking_content)
         self.response_edit.setTextCursor(cursor)
 
     def finalize_response(self):
-        html = self._render_markdown(self._accumulated_content)
+        content, thinking = self._extract_thinking(self._accumulated_content)
+        if thinking:
+            self.append_reasoning(thinking)
+        self._accumulated_content = content
+        html = self._render_markdown(content)
         full_html = f"<html><head>{self._html_style}</head><body>{html}</body></html>"
         self.response_edit.setHtml(full_html)
 
     def append_reasoning(self, new_reasoning: str):
         self.reasoning_toggle.setVisible(True)
-        self.reasoning_edit.setVisible(True)
+        if new_reasoning in self._accumulated_reasoning:
+            return
+        self._accumulated_reasoning += new_reasoning
         cursor = self.reasoning_edit.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(new_reasoning)

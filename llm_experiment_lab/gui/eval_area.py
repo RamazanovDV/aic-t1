@@ -202,12 +202,26 @@ class EvalArea(QWidget):
         else:
             self.eval_model_combo.setCurrentText(model_name)
 
+    def _extract_thinking(self, content: str) -> tuple[str, str]:
+        reasoning = ""
+        if "<think>" in content and "</think>" in content:
+            start = content.find("<think>")
+            end = content.find("</think>") + len("</think>")
+            reasoning = content[start:end]
+            content = content[:start] + content[end:]
+        return content, reasoning
+
     def set_eval_result(self, text: str, reasoning: Optional[str] = None):
+        text, thinking = self._extract_thinking(text)
         html = self._render_markdown(text)
         self.eval_result_edit.setHtml(html)
-        if reasoning:
-            self.reasoning_edit.setPlainText(reasoning)
+        final_reasoning = thinking or reasoning
+        if final_reasoning:
+            self.reasoning_edit.setPlainText(final_reasoning)
             self.reasoning_toggle.setVisible(True)
+            self.reasoning_edit.setMaximumHeight(0)
+            self.reasoning_edit.setVisible(False)
+            self.reasoning_toggle.setChecked(False)
         else:
             self.reasoning_toggle.setVisible(False)
             self.reasoning_edit.setVisible(False)
@@ -241,7 +255,9 @@ class EvalArea(QWidget):
 
     def append_eval_reasoning(self, new_reasoning: str):
         self.reasoning_toggle.setVisible(True)
-        self.reasoning_edit.setVisible(True)
+        current_text = self.reasoning_edit.toPlainText()
+        if new_reasoning in current_text:
+            return
         cursor = self.reasoning_edit.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(new_reasoning)
